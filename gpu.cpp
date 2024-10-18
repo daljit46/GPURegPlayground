@@ -112,7 +112,7 @@ WGPUContext createWebGPUContext()
         auto* result = static_cast<RequestAdapterResult*>(userdata);
         result->status = status;
         result->adapter = wgpu::Adapter::Acquire(adapter);
-        result->message = message == nullptr ? message : "";
+        result->message = message != nullptr ? message : "";
     };
 
     RequestAdapterResult adapterResult;
