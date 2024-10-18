@@ -48,15 +48,15 @@ WGPUContext createWebGPUContext()
 
     auto adapterCallback = [](WGPURequestAdapterStatus status,
                               WGPUAdapter adapter,
-                              WGPUStringView message,
+                              const char* message,
                               void * userdata) {
         if(status != WGPURequestAdapterStatus_Success) {
-            throw std::runtime_error("Failed to create adapter: "s + message.data);
+            throw std::runtime_error("Failed to create adapter: "s + message);
         }
         auto* result = static_cast<RequestAdapterResult*>(userdata);
         result->status = status;
         result->adapter = wgpu::Adapter::Acquire(adapter);
-        result->message = std::string(message.data, message.length);
+        result->message = message ? message : "";
     };
 
     RequestAdapterResult adapterResult;
@@ -66,18 +66,18 @@ WGPUContext createWebGPUContext()
     context.queue = context.device.GetQueue();
 
 
-    auto onDeviceError = [](WGPUErrorType type, WGPUStringView message, void*) {
+    auto onDeviceError = [](WGPUErrorType type, const char* message, void*) {
         std::cout << "Device error: " << type << std::endl;
-        if(message.data) {
-            std::cout << "Message: " << message.data << std::endl;
+        if(message) {
+            std::cout << "Message: " << message << std::endl;
         }
         std::cout << std::endl;
     };
 
-    auto onDeviceLost = [](WGPUDeviceLostReason reason, WGPUStringView message, void*) {
+    auto onDeviceLost = [](WGPUDeviceLostReason reason, const char* message, void*) {
         std::cout << "Device lost: " << reason << std::endl;
-        if(message.data) {
-            std::cout << "Message: " << message.data << std::endl;
+        if(message) {
+            std::cout << "Message: " << message << std::endl;
         }
         std::cout << std::endl;
     };

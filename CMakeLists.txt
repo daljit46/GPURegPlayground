@@ -10,9 +10,15 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 add_executable(GPURegPlayground main.cpp
     wgpucontext.h wgpucontext.cpp)
 
-include(dawn)
+include(FetchContent)
+FetchContent_Declare(
+  webgpu
+  GIT_REPOSITORY https://github.com/eliemichel/WebGPU-distribution
+  GIT_TAG        dawn
+)
+FetchContent_MakeAvailable(webgpu)
 
-target_link_libraries(GPURegPlayground PRIVATE libdawn)
+target_link_libraries(GPURegPlayground PRIVATE webgpu_dawn)
 
 include(GNUInstallDirs)
 install(TARGETS GPURegPlayground
