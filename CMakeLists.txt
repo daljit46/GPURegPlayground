@@ -8,7 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 add_executable(GPURegPlayground main.cpp
-    wgpucontext.h wgpucontext.cpp)
+    gpu.h gpu.cpp
+    utils.h utils.cpp
+    image.h
+)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -18,7 +21,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(webgpu)
 
-target_link_libraries(GPURegPlayground PRIVATE webgpu_dawn)
+add_library(stb-image INTERFACE)
+target_include_directories(stb-image INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/stb
+)
+
+target_link_libraries(GPURegPlayground PRIVATE
+    webgpu_dawn
+    stb-image
+)
 
 include(GNUInstallDirs)
 install(TARGETS GPURegPlayground
