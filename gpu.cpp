@@ -2,8 +2,11 @@
 #include "image.h"
 #include "utils.h"
 
-#include <bits/basic_string.h>
+#include <cstdint>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 #include <webgpu/webgpu.h>
 #include <webgpu/webgpu_cpp.h>
 
@@ -29,13 +32,12 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     wgpu::AdapterInfo adapterInfo;
     adapter.GetInfo(&adapterInfo);
 
-    std::cout << "Adapter vendor: " << std::string_view(adapterInfo.vendor) << std::endl;
-    std::cout << "Adapter type: " << parseAdapterType(adapterInfo.adapterType) << std::endl;
-    std::cout << "Adapter architecture: " << std::string_view(adapterInfo.architecture) << std::endl;
-    std::cout << "Adapter description: " << std::string_view(adapterInfo.description) << std::endl;
-    std::cout << "Adapter device: " << std::string_view(adapterInfo.device) << std::endl;
+    std::cout << "Adapter vendor: " << std::string_view(adapterInfo.vendor) << '\n';
+    std::cout << "Adapter type: " << parseAdapterType(adapterInfo.adapterType) << '\n';
+    std::cout << "Adapter architecture: " << std::string_view(adapterInfo.architecture) << '\n';
+    std::cout << "Adapter description: " << std::string_view(adapterInfo.description) << '\n';
+    std::cout << "Adapter device: " << std::string_view(adapterInfo.device) << '\n';
 }
-
 
 WGPUImageBuffer createImageBufferFromHost(const Image &image,
                                           const wgpu::Device &device,
@@ -46,7 +48,7 @@ WGPUImageBuffer createImageBufferFromHost(const Image &image,
     descriptor.format = wgpu::TextureFormat::R8Uint;
     descriptor.size = { image.width, image.height, 1};
     descriptor.sampleCount = 1;
-    descriptor.viewFormatCount = 1;
+    descriptor.viewFormatCount = 0;
     descriptor.viewFormats = nullptr;
     descriptor.usage = (
         wgpu::TextureUsage::TextureBinding | // to read texture in shaders
@@ -153,7 +155,88 @@ WGPUImageBuffer createImageBuffer(const Image &image, const wgpu::Device &device
 
 WGPUImageBuffer createReadOnlyImageBuffer(const Image &image, const wgpu::Device &device)
 {
-    return createImageBufferFromHost(image, device, wgpu::TextureUsage::StorageBinding);
+    return createImageBufferFromHost(image, device, wgpu::TextureUsage::CopySrc);
+}
+
+Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &context)
+{
+    wgpu::CommandEncoderDescriptor descriptor {};
+    descriptor.label = "Image buffer to host encoder";
+
+    auto encoder = context.device.CreateCommandEncoder(&descriptor);
+
+    // Create output buffer
+    wgpu::BufferDescriptor outputBufferDescriptor {
+        .usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapRead,
+        .size = buffer.size.width * buffer.size.height * sizeof(uint8_t)
+    };
+    outputBufferDescriptor.mappedAtCreation = false;
+
+    auto outputBuffer = context.device.CreateBuffer(&outputBufferDescriptor);
+
+    const wgpu::ImageCopyTexture copyTexture {
+        .texture = buffer.texture
+    };
+    const wgpu::ImageCopyBuffer copyBuffer {
+        .layout = wgpu::TextureDataLayout{
+            .offset = 0,
+            .bytesPerRow = buffer.size.width,
+            .rowsPerImage = buffer.size.height
+        },
+        .buffer = outputBuffer
+    };
+
+    encoder.CopyTextureToBuffer(&copyTexture, &copyBuffer, &buffer.size);
+    auto queue = context.device.GetQueue();
+    auto commands = encoder.Finish();
+    queue.OnSubmittedWorkDone([](WGPUQueueWorkDoneStatus status, void * userdata){
+        std::cout << "Work done: " << status << "\n";
+    }, nullptr);
+    queue.Submit(1, &commands);
+
+    // Map buffer
+    struct MapResult {
+        bool ready = false;
+        wgpu::Buffer buffer;
+        std::vector<uint8_t> data;
+    };
+
+    wgpu::BufferMapCallback onBufferMapped = [](WGPUBufferMapAsyncStatus status, void * userdata) {
+        auto *mapResult = reinterpret_cast<MapResult*>(userdata);
+        mapResult->ready = true;
+        if(status == WGPUBufferMapAsyncStatus_Success) {
+            auto *bufferData = mapResult->buffer.GetConstMappedRange();
+            mapResult->data = std::vector<uint8_t>((uint8_t*)bufferData, (uint8_t*)bufferData + mapResult->buffer.GetSize());
+            mapResult->buffer.Unmap();
+        }
+        else {
+            throw std::runtime_error("Failed to map buffer to host: " + std::to_string(status));
+        }
+    };
+
+    MapResult mapResult {
+        .buffer = outputBuffer
+    };
+
+    wgpu::BufferMapCallbackInfo mappingInfo {};
+    mappingInfo.mode = wgpu::CallbackMode::WaitAnyOnly;
+    mappingInfo.callback = onBufferMapped;
+    mappingInfo.userdata = reinterpret_cast<void*>(&mapResult);
+
+    auto bufferMapped = outputBuffer.MapAsync(wgpu::MapMode::Read,
+                                              0,
+                                              outputBuffer.GetSize(),
+                                              mappingInfo
+                                              );
+
+    // Wait for mapping to finish
+    context.instance.WaitAny(bufferMapped, 1e10);
+    Image image;
+    image.width = buffer.size.width;
+    image.height = buffer.size.height;
+    image.data = std::move(mapResult.data);
+
+    return image;
 }
 
 

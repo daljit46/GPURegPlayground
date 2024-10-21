@@ -20,6 +20,7 @@ struct WGPUImageBuffer {
 
 [[nodiscard]] WGPUImageBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
 [[nodiscard]] WGPUImageBuffer createReadOnlyImageBuffer(const Image& image, const wgpu::Device& device);
+[[nodiscard]] Image createHostImageFromBuffer(const WGPUImageBuffer& buffer, WGPUContext& context);
 
 [[nodiscard]] WGPUContext createWebGPUContext();
 
