@@ -207,15 +207,15 @@ Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &cont
     struct MapResult {
         bool ready = false;
         wgpu::Buffer buffer;
-        std::vector<uint8_t> data;
+        const uint8_t* data; // [stride * buffer.size.height
     };
 
     wgpu::BufferMapCallback onBufferMapped = [](WGPUBufferMapAsyncStatus status, void * userdata) {
         auto *mapResult = reinterpret_cast<MapResult*>(userdata);
         mapResult->ready = true;
         if(status == WGPUBufferMapAsyncStatus_Success) {
-            auto *bufferData = mapResult->buffer.GetConstMappedRange();
-            mapResult->data = std::vector<uint8_t>((uint8_t*)bufferData, (uint8_t*)bufferData + mapResult->buffer.GetSize());
+            auto bufferData =  mapResult->buffer.GetConstMappedRange();
+            mapResult->data = reinterpret_cast<const uint8_t*>(bufferData);
             mapResult->buffer.Unmap();
         }
         else {
@@ -241,10 +241,22 @@ Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &cont
     // Wait for mapping to finish
     context.instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
 
+    // The data is now in mapResult.data
+    // This is padded to 256 bytes per row
+
+    // Copy the data to a new vector with the correct width
+    std::vector<uint8_t> data;
+    data.reserve(buffer.size.width * buffer.size.height);
+
+    for(uint32_t y = 0; y < buffer.size.height; ++y) {
+        auto rowStart = mapResult.data + y * stride;
+        data.insert(data.end(), rowStart, rowStart + buffer.size.width);
+    }
+
     Image image;
     image.width = buffer.size.width;
     image.height = buffer.size.height;
-    image.data = std::move(mapResult.data);
+    image.data = std::move(data);
 
     return image;
 }
