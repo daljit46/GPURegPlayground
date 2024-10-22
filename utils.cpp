@@ -35,3 +35,19 @@ Image Utils::loadFromDisk(const std::filesystem::path &imagePath)
 
     return result;
 }
+
+void Utils::saveToDisk(const Image &image, const std::filesystem::path &imagePath)
+{
+    using namespace std::string_literals;
+
+    std::ofstream file(imagePath, std::ios::binary);
+    if(!file.is_open()) {
+        throw std::runtime_error("Failed to open file for writing: "s + imagePath.string());
+    }
+
+    file << "P5\n" << image.width << " " << image.height << "\n255\n";
+    file.write(reinterpret_cast<const char*>(image.data.data()), image.data.size());
+    file.close();
+
+    std::cout << "Saved image to disk: " << imagePath << " (" << image.width << "x" << image.height << ")" << std::endl;
+}
