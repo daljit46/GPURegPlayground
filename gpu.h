@@ -6,22 +6,27 @@ class Image;
 
 namespace gpu {
 
-struct WGPUContext {
+struct Context {
     wgpu::Instance instance;
     wgpu::Adapter adapter;
     wgpu::Device device;
     wgpu::Queue queue;
 };
 
-struct WGPUImageBuffer {
+struct ImageBuffer {
     wgpu::Texture texture;
     wgpu::Extent3D size;
 };
 
-[[nodiscard]] WGPUImageBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
-[[nodiscard]] WGPUImageBuffer createReadOnlyImageBuffer(const Image& image, const wgpu::Device& device);
-[[nodiscard]] Image createHostImageFromBuffer(const WGPUImageBuffer& buffer, WGPUContext& context);
+[[nodiscard]] ImageBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
+[[nodiscard]] ImageBuffer createReadOnlyImageBuffer(const Image& image, const wgpu::Device& device);
+[[nodiscard]] Image createHostImageFromBuffer(const ImageBuffer& buffer, Context& context);
 
-[[nodiscard]] WGPUContext createWebGPUContext();
+void applyShaderTransform(const ImageBuffer& src, ImageBuffer& dst, const std::string& shaderCode, Context& context);
+
+[[nodiscard]] Context createWebGPUContext();
+
+
+[[nodiscard]] Context createWebGPUContext();
 
 }

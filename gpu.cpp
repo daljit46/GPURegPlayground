@@ -39,7 +39,7 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     std::cout << "Adapter device: " << std::string_view(adapterInfo.device) << '\n';
 }
 
-WGPUImageBuffer createImageBufferFromHost(const Image &image,
+ImageBuffer createImageBufferFromHost(const Image &image,
                                           const wgpu::Device &device,
                                           const wgpu::TextureUsage& additionalFlags = {})
 {
@@ -78,7 +78,7 @@ WGPUImageBuffer createImageBufferFromHost(const Image &image,
                        &dataLayout,
                        &(descriptor.size));
 
-    return WGPUImageBuffer {
+    return ImageBuffer {
         .texture = gpuTexture,
         .size = descriptor.size
     };
@@ -87,11 +87,11 @@ WGPUImageBuffer createImageBufferFromHost(const Image &image,
 
 }
 
-WGPUContext createWebGPUContext()
+Context createWebGPUContext()
 {
     using namespace std::string_literals;
 
-    WGPUContext context;
+    Context context;
     wgpu::InstanceDescriptor instanceDescriptor {};
     instanceDescriptor.nextInChain = nullptr;
     // Required for using timed waits in async operations
@@ -155,17 +155,17 @@ WGPUContext createWebGPUContext()
     return context;
 }
 
-WGPUImageBuffer createImageBuffer(const Image &image, const wgpu::Device &device)
+ImageBuffer createImageBuffer(const Image &image, const wgpu::Device &device)
 {
     return createImageBufferFromHost(image, device, {});
 }
 
-WGPUImageBuffer createReadOnlyImageBuffer(const Image &image, const wgpu::Device &device)
+ImageBuffer createReadOnlyImageBuffer(const Image &image, const wgpu::Device &device)
 {
     return createImageBufferFromHost(image, device, wgpu::TextureUsage::CopySrc);
 }
 
-Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &context)
+Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
 {
     auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
         return (width * bytesPerPixel + 255) & ~255;
