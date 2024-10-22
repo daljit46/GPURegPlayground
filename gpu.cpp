@@ -160,15 +160,21 @@ WGPUImageBuffer createReadOnlyImageBuffer(const Image &image, const wgpu::Device
 
 Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &context)
 {
+    auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
+        return (width * bytesPerPixel + 255) & ~255;
+    };
+
+    const auto stride = paddedBytesPerRow(buffer.size.width, 1);
+    constexpr auto pixelSize = sizeof(uint8_t);
+
     wgpu::CommandEncoderDescriptor descriptor {};
     descriptor.label = "Image buffer to host encoder";
 
     auto encoder = context.device.CreateCommandEncoder(&descriptor);
 
-    // Create output buffer
     wgpu::BufferDescriptor outputBufferDescriptor {
-        .usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::MapRead,
-        .size = buffer.size.width * buffer.size.height * sizeof(uint8_t)
+        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+        .size = stride * buffer.size.height * pixelSize
     };
     outputBufferDescriptor.mappedAtCreation = false;
 
@@ -180,7 +186,7 @@ Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &cont
     const wgpu::ImageCopyBuffer copyBuffer {
         .layout = wgpu::TextureDataLayout{
             .offset = 0,
-            .bytesPerRow = buffer.size.width,
+            .bytesPerRow = paddedBytesPerRow(buffer.size.width, pixelSize),
             .rowsPerImage = buffer.size.height
         },
         .buffer = outputBuffer
@@ -189,12 +195,8 @@ Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &cont
     encoder.CopyTextureToBuffer(&copyTexture, &copyBuffer, &buffer.size);
     auto queue = context.device.GetQueue();
     auto commands = encoder.Finish();
-    queue.OnSubmittedWorkDone([](WGPUQueueWorkDoneStatus status, void * userdata){
-        std::cout << "Work done: " << status << "\n";
-    }, nullptr);
     queue.Submit(1, &commands);
 
-    // Map buffer
     struct MapResult {
         bool ready = false;
         wgpu::Buffer buffer;
@@ -230,7 +232,8 @@ Image createHostImageFromBuffer(const WGPUImageBuffer &buffer, WGPUContext &cont
                                               );
 
     // Wait for mapping to finish
-    context.instance.WaitAny(bufferMapped, 1e10);
+    context.instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
+
     Image image;
     image.width = buffer.size.width;
     image.height = buffer.size.height;
