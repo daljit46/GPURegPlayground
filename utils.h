@@ -8,4 +8,6 @@ namespace Utils {
 [[nodiscard]] Image loadFromDisk(const std::filesystem::path &imagePath);
 
 void saveToDisk(const Image &image, const std::filesystem::path &imagePath);
+
+std::string readFile(const std::filesystem::path &filePath);
 }

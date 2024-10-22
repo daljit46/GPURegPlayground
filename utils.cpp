@@ -9,10 +9,10 @@
 #include <vector>
 #include <fstream>
 
+using namespace std::string_literals;
+
 Image Utils::loadFromDisk(const std::filesystem::path &imagePath)
 {
-    using namespace std::string_literals;
-
     if(!std::filesystem::exists(imagePath)) {
         throw std::runtime_error("Image file not found: "s + imagePath.string());
     }
@@ -50,4 +50,19 @@ void Utils::saveToDisk(const Image &image, const std::filesystem::path &imagePat
     file.close();
 
     std::cout << "Saved image to disk: " << imagePath << " (" << image.width << "x" << image.height << ")" << std::endl;
+}
+
+std::string Utils::readFile(const std::filesystem::path &filePath)
+{
+    if(!std::filesystem::exists(filePath)) {
+        throw std::runtime_error("File not found: "s + filePath.string());
+    }
+
+    std::ifstream f(filePath, std::ios::in | std::ios::binary);
+    const auto fileSize = std::filesystem::file_size(filePath);
+    std::string result(fileSize, '\0');
+    f.read(result.data(), fileSize);
+
+    return result;
+
 }
