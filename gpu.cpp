@@ -92,7 +92,14 @@ WGPUContext createWebGPUContext()
     using namespace std::string_literals;
 
     WGPUContext context;
-    context.instance = wgpu::CreateInstance();
+    wgpu::InstanceDescriptor instanceDescriptor {};
+    instanceDescriptor.nextInChain = nullptr;
+    // Required for using timed waits in async operations
+    // e.g. for using wgpu::Instance::waitAny
+    // https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html#Wait-Any
+    instanceDescriptor.features.timedWaitAnyEnable = true;
+
+    context.instance = wgpu::CreateInstance(&instanceDescriptor);
 
     wgpu::RequestAdapterOptions adapterOptions {};
     adapterOptions.powerPreference = wgpu::PowerPreference::HighPerformance;
