@@ -9,5 +9,9 @@ namespace Utils {
 
 void saveToDisk(const Image &image, const std::filesystem::path &imagePath);
 
-std::string readFile(const std::filesystem::path &filePath);
+enum ReadFileMode {
+    Text,
+    Binary
+};
+std::string readFile(const std::filesystem::path &filePath, ReadFileMode mode = ReadFileMode::Text);
 }

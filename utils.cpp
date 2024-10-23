@@ -52,13 +52,14 @@ void Utils::saveToDisk(const Image &image, const std::filesystem::path &imagePat
     std::cout << "Saved image to disk: " << imagePath << " (" << image.width << "x" << image.height << ")" << std::endl;
 }
 
-std::string Utils::readFile(const std::filesystem::path &filePath)
+std::string Utils::readFile(const std::filesystem::path &filePath, ReadFileMode mode)
 {
     if(!std::filesystem::exists(filePath)) {
         throw std::runtime_error("File not found: "s + filePath.string());
     }
 
-    std::ifstream f(filePath, std::ios::in | std::ios::binary);
+    const auto openMode = (mode == ReadFileMode::Binary) ? std::ios::in | std::ios::binary : std::ios::in;
+    std::ifstream f(filePath, std::ios::in | openMode);
     const auto fileSize = std::filesystem::file_size(filePath);
     std::string result(fileSize, '\0');
     f.read(result.data(), fileSize);
