@@ -39,6 +39,17 @@ add_custom_command(TARGET GPURegPlayground PRE_BUILD
     "$<TARGET_FILE_DIR:GPURegPlayground>/data"
 )
 
+add_custom_target(shaders SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transformimage.wgsl
+)
+
+add_custom_command(TARGET shaders PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    "$<TARGET_FILE_DIR:GPURegPlayground>"
+)
+
+
 include(GNUInstallDirs)
 install(TARGETS GPURegPlayground
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

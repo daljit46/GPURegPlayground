@@ -29,6 +29,7 @@ std::string parseAdapterType(wgpu::AdapterType type)
 
 void printAdapterInfo(const wgpu::Adapter& adapter)
 {
+    std::cout << "--- Adapter Info ---\n";
     wgpu::AdapterInfo adapterInfo;
     adapter.GetInfo(&adapterInfo);
 
@@ -37,11 +38,52 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     std::cout << "Adapter architecture: " << std::string_view(adapterInfo.architecture) << '\n';
     std::cout << "Adapter description: " << std::string_view(adapterInfo.description) << '\n';
     std::cout << "Adapter device: " << std::string_view(adapterInfo.device) << '\n';
+
+
+    // Parse limits
+
+    wgpu::SupportedLimits supportedLimits {};
+    adapter.GetLimits(&supportedLimits);
+    std::cout << "Adapter limits:\n";
+    std::cout << "  maxTextureDimension1D: " << supportedLimits.limits.maxTextureDimension1D << '\n';
+    std::cout << "  maxTextureDimension2D: " << supportedLimits.limits.maxTextureDimension2D << '\n';
+    std::cout << "  maxTextureDimension3D: " << supportedLimits.limits.maxTextureDimension3D << '\n';
+    std::cout << "  maxTextureArrayLayers: " << supportedLimits.limits.maxTextureArrayLayers << '\n';
+    std::cout << "  maxBindGroups: " << supportedLimits.limits.maxBindGroups << '\n';
+    std::cout << "  maxBindGroupsPlusVertexBuffers: " << supportedLimits.limits.maxBindGroupsPlusVertexBuffers << '\n';
+    std::cout << "  maxBindingsPerBindGroup: " << supportedLimits.limits.maxBindingsPerBindGroup << '\n';
+    std::cout << "  maxDynamicUniformBuffersPerPipelineLayout: " << supportedLimits.limits.maxDynamicUniformBuffersPerPipelineLayout << '\n';
+    std::cout << "  maxDynamicStorageBuffersPerPipelineLayout: " << supportedLimits.limits.maxDynamicStorageBuffersPerPipelineLayout << '\n';
+    std::cout << "  maxSampledTexturesPerShaderStage: " << supportedLimits.limits.maxSampledTexturesPerShaderStage << '\n';
+    std::cout << "  maxSamplersPerShaderStage: " << supportedLimits.limits.maxSamplersPerShaderStage << '\n';
+    std::cout << "  maxStorageBuffersPerShaderStage: " << supportedLimits.limits.maxStorageBuffersPerShaderStage << '\n';
+    std::cout << "  maxStorageTexturesPerShaderStage: " << supportedLimits.limits.maxStorageTexturesPerShaderStage << '\n';
+    std::cout << "  maxUniformBuffersPerShaderStage: " << supportedLimits.limits.maxUniformBuffersPerShaderStage << '\n';
+    std::cout << "  maxUniformBufferBindingSize: " << supportedLimits.limits.maxUniformBufferBindingSize << '\n';
+    std::cout << "  maxStorageBufferBindingSize: " << supportedLimits.limits.maxStorageBufferBindingSize << '\n';
+    std::cout << "  minUniformBufferOffsetAlignment: " << supportedLimits.limits.minUniformBufferOffsetAlignment << '\n';
+    std::cout << "  minStorageBufferOffsetAlignment: " << supportedLimits.limits.minStorageBufferOffsetAlignment << '\n';
+    std::cout << "  maxVertexBuffers: " << supportedLimits.limits.maxVertexBuffers << '\n';
+    std::cout << "  maxBufferSize: " << supportedLimits.limits.maxBufferSize << '\n';
+    std::cout << "  maxVertexAttributes: " << supportedLimits.limits.maxVertexAttributes << '\n';
+    std::cout << "  maxVertexBufferArrayStride: " << supportedLimits.limits.maxVertexBufferArrayStride << '\n';
+    std::cout << "  maxInterStageShaderComponents: " << supportedLimits.limits.maxInterStageShaderComponents << '\n';
+    std::cout << "  maxInterStageShaderVariables: " << supportedLimits.limits.maxInterStageShaderVariables << '\n';
+    std::cout << "  maxColorAttachments: " << supportedLimits.limits.maxColorAttachments << '\n';
+    std::cout << "  maxColorAttachmentBytesPerSample: " << supportedLimits.limits.maxColorAttachmentBytesPerSample << '\n';
+    std::cout << "  maxComputeWorkgroupStorageSize: " << supportedLimits.limits.maxComputeWorkgroupStorageSize << '\n';
+    std::cout << "  maxComputeInvocationsPerWorkgroup: " << supportedLimits.limits.maxComputeInvocationsPerWorkgroup << '\n';
+    std::cout << "  maxComputeWorkgroupSizeX: " << supportedLimits.limits.maxComputeWorkgroupSizeX << '\n';
+    std::cout << "  maxComputeWorkgroupSizeY: " << supportedLimits.limits.maxComputeWorkgroupSizeY << '\n';
+    std::cout << "  maxComputeWorkgroupSizeZ: " << supportedLimits.limits.maxComputeWorkgroupSizeZ << '\n';
+    std::cout << "  maxComputeWorkgroupsPerDimension: " << supportedLimits.limits.maxComputeWorkgroupsPerDimension << '\n';
+
+    std::cout << "---------------------\n";
 }
 
 ImageBuffer createImageBufferFromHost(const Image &image,
-                                          const wgpu::Device &device,
-                                          const wgpu::TextureUsage& additionalFlags = {})
+                                      const wgpu::Device &device,
+                                      const wgpu::TextureUsage& additionalFlags = {})
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
@@ -128,7 +170,6 @@ Context createWebGPUContext()
     context.instance.RequestAdapter(&adapterOptions, adapterCallback, &adapterResult);
     context.adapter = adapterResult.adapter;
     context.device = context.adapter.CreateDevice();
-    context.queue = context.device.GetQueue();
 
 
     auto onDeviceError = [](WGPUErrorType type, const char* message, void*) {
@@ -155,6 +196,11 @@ Context createWebGPUContext()
     return context;
 }
 
+ImageBuffer createEmptyImageBuffer(const wgpu::Device &device)
+{
+
+}
+
 ImageBuffer createImageBuffer(const Image &image, const wgpu::Device &device)
 {
     return createImageBufferFromHost(image, device, {});
@@ -167,6 +213,7 @@ ImageBuffer createReadOnlyImageBuffer(const Image &image, const wgpu::Device &de
 
 Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
 {
+    // WebGPU requires that the bytes per row is a multiple of 256
     auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
         return (width * bytesPerPixel + 255) & ~255;
     };
@@ -241,9 +288,6 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
     // Wait for mapping to finish
     context.instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
 
-    // The data is now in mapResult.data
-    // This is padded to 256 bytes per row
-
     // Copy the data to a new vector with the correct width
     std::vector<uint8_t> data;
     data.reserve(buffer.size.width * buffer.size.height);
@@ -261,5 +305,138 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
     return image;
 }
 
+void applyShaderTransform(const ImageBuffer &src, ImageBuffer &dst, const std::string &shaderCode, Context &context)
+{
+
+}
+
+wgpu::ShaderModule createShaderModule(const std::string &name, const std::string &code, const Context &context)
+{
+    wgpu::ShaderModuleWGSLDescriptor wgslDescriptor {};
+    wgslDescriptor.code = code.c_str();
+    wgpu::ShaderModuleDescriptor descriptor {};
+    descriptor.nextInChain = &wgslDescriptor;
+    descriptor.label = name.c_str();
+
+    return context.device.CreateShaderModule(&descriptor);
+}
+
+ComputeOperation createComputeOperation(const ShaderEntry &shader,
+                      const std::vector<ImageBuffer> &inputImageBuffers,
+                      const std::vector<Buffer> &inputBuffers,
+                      std::vector<ImageBuffer> &outputImageBuffers,
+                      std::vector<Buffer> &outputBuffers,
+                      Context &context)
+{
+    // Create BindGroupLayout with all input and output buffers
+    std::vector<wgpu::BindGroupLayoutEntry> layoutEntries;
+    layoutEntries.reserve(inputImageBuffers.size() +
+                          inputBuffers.size() +
+                          outputImageBuffers.size() +
+                          outputBuffers.size()
+                          );
+
+    uint8_t bindingIndex = 0;
+    for(const auto& imageBuffer : inputImageBuffers) {
+        const wgpu::BindGroupLayoutEntry entry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage} ,
+            .storageTexture = {
+                .access = wgpu::StorageTextureAccess::WriteOnly,
+                .format = wgpu::TextureFormat::R8Uint,
+                .viewDimension = wgpu::TextureViewDimension::e2D
+            }
+        };
+        layoutEntries.push_back(entry);
+    }
+
+    for(const auto& buffer: inputBuffers) {
+        const wgpu::BindGroupLayoutEntry entry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage }
+        };
+
+        layoutEntries.push_back(entry);
+    }
+
+    for(const auto& imageBuffer: outputImageBuffers) {
+        const wgpu::BindGroupLayoutEntry entry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::Storage },
+            .storageTexture = {
+                .access = wgpu::StorageTextureAccess::WriteOnly,
+                .format = wgpu::TextureFormat::R8Uint,
+                .viewDimension = wgpu::TextureViewDimension::e2D
+            }
+        };
+        layoutEntries.push_back(entry);
+    }
+
+    for(const auto& buffer: outputBuffers) {
+        const wgpu::BindGroupLayoutEntry entry{
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .buffer = wgpu::BufferBindingLayout {.type = wgpu::BufferBindingType::Storage }
+        };
+        layoutEntries.push_back(entry);
+    }
+
+    const auto layoutDescLabel = shader.name + " layout descriptor";
+    const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor {
+        .label = layoutDescLabel.c_str(),
+        .entryCount = layoutEntries.size(),
+        .entries = layoutEntries.data()
+    };
+
+
+    const wgpu::BindGroupLayout bindGroupLayout = context.device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+
+    // Create compute pipeline
+    const wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor {
+        .bindGroupLayoutCount = 1,
+        .bindGroupLayouts = &bindGroupLayout
+    };
+    const wgpu::PipelineLayout pipelineLayout = context.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
+
+    const auto computePipelineLabel = shader.name + " compute pipeline";
+    const wgpu::ComputePipelineDescriptor computePipelineDescriptor {
+        .label = computePipelineLabel.c_str(),
+        .layout = pipelineLayout,
+        .compute = wgpu::ProgrammableStageDescriptor {
+            .module = createShaderModule(shader.name, shader.code, context),
+            .entryPoint = shader.entryPoint.c_str()
+        },
+    };
+
+    const wgpu::BindGroupDescriptor bindGroupDescriptor{
+        .layout = bindGroupLayout,
+            .entryCount = 0,
+            .entries = nullptr
+    };
+
+    return ComputeOperation {
+        .pipeline = context.device.CreateComputePipeline(&computePipelineDescriptor),
+        .bindGroup = context.device.CreateBindGroup(&bindGroupDescriptor)
+    };
+}
+
+void dispatchOperation(const ComputeOperation& operation,
+                       WorkgroupDimensions workgroupDimensions,
+                       Context& context)
+{
+    wgpu::CommandEncoder encoder = context.device.CreateCommandEncoder();
+    wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+    pass.SetPipeline(operation.pipeline);
+    pass.SetBindGroup(0, operation.bindGroup);
+    pass.DispatchWorkgroups(workgroupDimensions.x, workgroupDimensions.y, workgroupDimensions.z);
+    pass.End();
+
+    auto commands = encoder.Finish();
+    auto queue = context.device.GetQueue();
+    queue.Submit(1, &commands);
+}
 
 }
