@@ -32,21 +32,20 @@ target_link_libraries(GPURegPlayground PRIVATE
     stb-image
 )
 
-# Copy data folder to binary directory
 add_custom_command(TARGET GPURegPlayground PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
     "${CMAKE_CURRENT_SOURCE_DIR}/data"
-    "$<TARGET_FILE_DIR:GPURegPlayground>/data"
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>/data"
 )
 
 add_custom_target(shaders SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transformimage.wgsl
 )
 
-add_custom_command(TARGET shaders PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
+add_custom_command(TARGET GPURegPlayground PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-    "$<TARGET_FILE_DIR:GPURegPlayground>"
+    "$<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders"
 )
 
 
