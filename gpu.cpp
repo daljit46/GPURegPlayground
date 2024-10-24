@@ -254,14 +254,14 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
     struct MapResult {
         bool ready = false;
         wgpu::Buffer buffer;
-        const uint8_t* data; // [stride * buffer.size.height
+        const uint8_t* data = nullptr; // [stride * buffer.size.height
     };
 
     wgpu::BufferMapCallback onBufferMapped = [](WGPUBufferMapAsyncStatus status, void * userdata) {
         auto *mapResult = reinterpret_cast<MapResult*>(userdata);
         mapResult->ready = true;
         if(status == WGPUBufferMapAsyncStatus_Success) {
-            auto bufferData =  mapResult->buffer.GetConstMappedRange();
+            const auto *const bufferData =  mapResult->buffer.GetConstMappedRange();
             mapResult->data = reinterpret_cast<const uint8_t*>(bufferData);
             mapResult->buffer.Unmap();
         }
@@ -293,7 +293,7 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
     data.reserve(buffer.size.width * buffer.size.height);
 
     for(uint32_t y = 0; y < buffer.size.height; ++y) {
-        auto rowStart = mapResult.data + y * stride;
+        const auto rowStart = mapResult.data + y * stride;
         data.insert(data.end(), rowStart, rowStart + buffer.size.width);
     }
 
@@ -321,23 +321,19 @@ wgpu::ShaderModule createShaderModule(const std::string &name, const std::string
     return context.device.CreateShaderModule(&descriptor);
 }
 
-ComputeOperation createComputeOperation(const ShaderEntry &shader,
-                      const std::vector<ImageBuffer> &inputImageBuffers,
-                      const std::vector<Buffer> &inputBuffers,
-                      std::vector<ImageBuffer> &outputImageBuffers,
-                      std::vector<Buffer> &outputBuffers,
-                      Context &context)
+ComputeOperation createComputeOperation(ComputeOperationData &data,
+                                        Context &context)
 {
     // Create BindGroupLayout with all input and output buffers
     std::vector<wgpu::BindGroupLayoutEntry> layoutEntries;
-    layoutEntries.reserve(inputImageBuffers.size() +
-                          inputBuffers.size() +
-                          outputImageBuffers.size() +
-                          outputBuffers.size()
+    layoutEntries.reserve(data.inputImageBuffers.size() +
+                          data.inputBuffers.size() +
+                          data.outputImageBuffers.size() +
+                          data.outputBuffers.size()
                           );
 
     uint8_t bindingIndex = 0;
-    for(const auto& imageBuffer : inputImageBuffers) {
+    for(const auto& imageBuffer : data.inputImageBuffers) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -351,7 +347,7 @@ ComputeOperation createComputeOperation(const ShaderEntry &shader,
         layoutEntries.push_back(entry);
     }
 
-    for(const auto& buffer: inputBuffers) {
+    for(const auto& buffer: data.inputBuffers) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -361,7 +357,7 @@ ComputeOperation createComputeOperation(const ShaderEntry &shader,
         layoutEntries.push_back(entry);
     }
 
-    for(const auto& imageBuffer: outputImageBuffers) {
+    for(const auto& imageBuffer: data.outputImageBuffers) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -375,7 +371,7 @@ ComputeOperation createComputeOperation(const ShaderEntry &shader,
         layoutEntries.push_back(entry);
     }
 
-    for(const auto& buffer: outputBuffers) {
+    for(const auto& buffer: data.outputBuffers) {
         const wgpu::BindGroupLayoutEntry entry{
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -384,7 +380,7 @@ ComputeOperation createComputeOperation(const ShaderEntry &shader,
         layoutEntries.push_back(entry);
     }
 
-    const auto layoutDescLabel = shader.name + " layout descriptor";
+    const auto layoutDescLabel = data.shader.name + " layout descriptor";
     const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor {
         .label = layoutDescLabel.c_str(),
         .entryCount = layoutEntries.size(),
@@ -401,13 +397,13 @@ ComputeOperation createComputeOperation(const ShaderEntry &shader,
     };
     const wgpu::PipelineLayout pipelineLayout = context.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
 
-    const auto computePipelineLabel = shader.name + " compute pipeline";
+    const auto computePipelineLabel = data.shader.name + " compute pipeline";
     const wgpu::ComputePipelineDescriptor computePipelineDescriptor {
         .label = computePipelineLabel.c_str(),
         .layout = pipelineLayout,
         .compute = wgpu::ProgrammableStageDescriptor {
-            .module = createShaderModule(shader.name, shader.code, context),
-            .entryPoint = shader.entryPoint.c_str()
+            .module = createShaderModule(data.shader.name, data.shader.code, context),
+            .entryPoint = data.shader.entryPoint.c_str()
         },
     };
 

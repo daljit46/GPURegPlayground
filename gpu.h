@@ -33,6 +33,14 @@ struct ComputeOperation {
     wgpu::BindGroup bindGroup;
 };
 
+struct ComputeOperationData {
+    ShaderEntry shader;
+    std::vector<Buffer> inputBuffers;
+    std::vector<ImageBuffer> inputImageBuffers;
+    std::vector<Buffer> outputBuffers;
+    std::vector<ImageBuffer> outputImageBuffers;
+};
+
 struct WorkgroupSize {
     uint32_t x = 16;
     uint32_t y = 16;
@@ -56,12 +64,7 @@ wgpu::ShaderModule createShaderModule(const std::string& name, const std::string
 void applyShaderTransform(const ImageBuffer& src, ImageBuffer& dst, const std::string& shaderCode, Context& context);
 
 // Dispatches a computer shader with the given input and output buffers and images
-ComputeOperation createComputeOperation(const ShaderEntry& shader,
-                                        const std::vector<ImageBuffer> &inputImageBuffers,
-                                        const std::vector<Buffer> &inputBuffers,
-                                        std::vector<ImageBuffer> &outputImageBuffers,
-                                        std::vector<Buffer> &outputBuffers,
-                                        Context &context);
+ComputeOperation createComputeOperation(ComputeOperationData &operationData, Context &context);
 
 void dispatchOperation(const ComputeOperation& operation,
                        WorkgroupDimensions workgroupDimensions,
