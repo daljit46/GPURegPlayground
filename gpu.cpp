@@ -87,7 +87,7 @@ ImageBuffer createImageBufferFromHost(const Image &image,
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
-    descriptor.format = wgpu::TextureFormat::R8Uint;
+    descriptor.format = wgpu::TextureFormat::R8Unorm;
     descriptor.size = { image.width, image.height, 1};
     descriptor.sampleCount = 1;
     descriptor.viewFormatCount = 0;
@@ -134,6 +134,12 @@ Context createWebGPUContext()
     using namespace std::string_literals;
 
     Context context;
+    std::array<const char*, 1> enabledTogglesArray = { "allow_unsafe_apis" };
+
+    wgpu::DawnTogglesDescriptor dawnToggles {};
+    dawnToggles.enabledToggles = enabledTogglesArray.data();
+    dawnToggles.enabledToggleCount = 1;
+
     wgpu::InstanceDescriptor instanceDescriptor {};
     instanceDescriptor.nextInChain = nullptr;
     // Required for using timed waits in async operations
@@ -169,7 +175,15 @@ Context createWebGPUContext()
     RequestAdapterResult adapterResult;
     context.instance.RequestAdapter(&adapterOptions, adapterCallback, &adapterResult);
     context.adapter = adapterResult.adapter;
-    context.device = context.adapter.CreateDevice();
+    std::vector<wgpu::FeatureName> requiredFeatures = {
+        wgpu::FeatureName::R8UnormStorage
+    };
+    wgpu::DeviceDescriptor deviceDescriptor {};
+    deviceDescriptor.nextInChain = &dawnToggles;
+    deviceDescriptor.requiredFeatures = requiredFeatures.data();
+    deviceDescriptor.requiredFeatureCount = requiredFeatures.size();
+
+    context.device = context.adapter.CreateDevice(&deviceDescriptor);
 
 
     auto onDeviceError = [](WGPUErrorType type, const char* message, void*) {
@@ -198,7 +212,19 @@ Context createWebGPUContext()
 
 ImageBuffer createEmptyImageBuffer(const wgpu::Device &device)
 {
+    wgpu::TextureDescriptor descriptor;
+    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.format = wgpu::TextureFormat::R32Float;
+    descriptor.size = {1, 1, 1};
+    descriptor.sampleCount = 1;
+    descriptor.viewFormatCount = 0;
+    descriptor.viewFormats = nullptr;
+    descriptor.usage = wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::CopyDst;
 
+    return ImageBuffer {
+        .texture = device.CreateTexture(&descriptor),
+        .size = descriptor.size
+    };
 }
 
 ImageBuffer createImageBuffer(const Image &image, const wgpu::Device &device)
@@ -228,7 +254,7 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
 
     wgpu::BufferDescriptor outputBufferDescriptor {
         .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
-        .size = stride * buffer.size.height * pixelSize
+        .size = uint64_t{stride * buffer.size.height * pixelSize}
     };
     outputBufferDescriptor.mappedAtCreation = false;
 
@@ -326,6 +352,7 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
 {
     // Create BindGroupLayout with all input and output buffers
     std::vector<wgpu::BindGroupLayoutEntry> layoutEntries;
+    std::vector<wgpu::BindGroupEntry> bindGroupEntries;
     layoutEntries.reserve(data.inputImageBuffers.size() +
                           data.inputBuffers.size() +
                           data.outputImageBuffers.size() +
@@ -334,17 +361,21 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
 
     uint8_t bindingIndex = 0;
     for(const auto& imageBuffer : data.inputImageBuffers) {
-        const wgpu::BindGroupLayoutEntry entry {
+        const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
-            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage} ,
-            .storageTexture = {
-                .access = wgpu::StorageTextureAccess::WriteOnly,
-                .format = wgpu::TextureFormat::R8Uint,
+            .texture = wgpu::TextureBindingLayout {
+                .sampleType = wgpu::TextureSampleType::Float,
                 .viewDimension = wgpu::TextureViewDimension::e2D
             }
         };
-        layoutEntries.push_back(entry);
+
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = layoutEntry.binding,
+            .textureView = imageBuffer.texture.CreateView()
+        };
+        layoutEntries.push_back(layoutEntry);
+        bindGroupEntries.push_back(bindGroupEntry);
     }
 
     for(const auto& buffer: data.inputBuffers) {
@@ -354,21 +385,33 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
             .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage }
         };
 
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = entry.binding,
+            .buffer = buffer.buffer
+        };
+
         layoutEntries.push_back(entry);
+        bindGroupEntries.push_back(bindGroupEntry);
     }
 
     for(const auto& imageBuffer: data.outputImageBuffers) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
-            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::Storage },
             .storageTexture = {
                 .access = wgpu::StorageTextureAccess::WriteOnly,
-                .format = wgpu::TextureFormat::R8Uint,
+                .format = imageBuffer.texture.GetFormat(),
                 .viewDimension = wgpu::TextureViewDimension::e2D
             }
         };
+
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = entry.binding,
+            .textureView = imageBuffer.texture.CreateView()
+        };
+
         layoutEntries.push_back(entry);
+        bindGroupEntries.push_back(bindGroupEntry);
     }
 
     for(const auto& buffer: data.outputBuffers) {
@@ -377,7 +420,14 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
             .visibility = wgpu::ShaderStage::Compute,
             .buffer = wgpu::BufferBindingLayout {.type = wgpu::BufferBindingType::Storage }
         };
+
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = entry.binding,
+            .buffer = buffer.buffer
+        };
+
         layoutEntries.push_back(entry);
+        bindGroupEntries.push_back(bindGroupEntry);
     }
 
     const auto layoutDescLabel = data.shader.name + " layout descriptor";
@@ -407,10 +457,16 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
         },
     };
 
+    for(const auto& bindGroupLayoutEntry : layoutEntries) {
+        const wgpu::BindGroupEntry entry {
+            .binding = bindGroupLayoutEntry.binding,
+        };
+    }
+
     const wgpu::BindGroupDescriptor bindGroupDescriptor{
         .layout = bindGroupLayout,
-            .entryCount = 0,
-            .entries = nullptr
+        .entryCount = bindGroupEntries.size(),
+        .entries = bindGroupEntries.data()
     };
 
     return ComputeOperation {

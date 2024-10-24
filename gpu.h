@@ -2,6 +2,10 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <cstdint>
+#include <string>
+#include <vector>
+
 class Image;
 
 namespace gpu {
@@ -52,7 +56,6 @@ struct WorkgroupDimensions {
     uint32_t y = 1;
     uint32_t z = 1;
 };
-
 
 [[nodiscard]] ImageBuffer createEmptyImageBuffer(const wgpu::Device& device);
 [[nodiscard]] ImageBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
