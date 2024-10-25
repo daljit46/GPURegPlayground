@@ -10,15 +10,21 @@ class Image;
 
 namespace gpu {
 
-struct Context {
-    wgpu::Instance instance;
-    wgpu::Adapter adapter;
-    wgpu::Device device;
-};
+
 
 struct TextureBuffer {
     wgpu::Texture texture;
     wgpu::Extent3D size;
+};
+
+enum class TextureUsage {
+    ReadOnly,
+    ReadWrite
+};
+
+enum class TextureFormat {
+    R8Unorm,
+    R32Float
 };
 
 struct Buffer {
@@ -57,10 +63,19 @@ struct WorkgroupDimensions {
     uint32_t z = 1;
 };
 
-[[nodiscard]] TextureBuffer createEmptyTextureBuffer(const wgpu::Device& device, uint32_t width, uint32_t height);
-[[nodiscard]] TextureBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
-[[nodiscard]] TextureBuffer createReadOnlyTextureBuffer(const Image& image, const wgpu::Device& device);
-[[nodiscard]] Image createHostImageFromBuffer(const TextureBuffer& buffer, Context& context);
+struct Context {
+    wgpu::Instance instance;
+    wgpu::Adapter adapter;
+    wgpu::Device device;
+};
+
+TextureBuffer makeEmptyTextureBuffer(uint32_t width, uint32_t height,
+                                       TextureUsage textureUsage,
+                                       TextureFormat texureFormat,
+                                       Context &context);
+TextureBuffer makeTextureBufferFromHost(const Image& image, Context &context);
+TextureBuffer makeReadOnlyTextureBuffer(const Image& image, Context &context);
+Image makeHostImageFromBuffer(const TextureBuffer& buffer, Context& context);
 
 wgpu::ShaderModule createShaderModule(const std::string& name, const std::string& code, const Context& context);
 

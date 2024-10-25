@@ -81,9 +81,32 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     std::cout << "---------------------\n";
 }
 
+wgpu::TextureUsage convertUsageToWGPU(TextureUsage usage)
+{
+    switch(usage) {
+    case TextureUsage::ReadOnly: {
+        return wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+    }
+    case TextureUsage::ReadWrite: {
+        return wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst;
+    }
+    default: return wgpu::TextureUsage::None;
+    }
+}
+
+wgpu::TextureFormat convertFormatToWGPU(TextureFormat format)
+{
+    switch(format) {
+        case TextureFormat::R8Unorm: return wgpu::TextureFormat::R8Unorm;
+        case TextureFormat::R32Float: return wgpu::TextureFormat::R32Float;
+        default: return wgpu::TextureFormat::Undefined;
+    }
+}
+
 TextureBuffer createImageBufferFromHost(const Image &image,
-                                      const wgpu::Device &device,
-                                      const wgpu::TextureUsage& additionalFlags = {})
+                                        Context &context,
+                                        const wgpu::TextureUsage& additionalFlags = {}
+                                        )
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
@@ -94,12 +117,12 @@ TextureBuffer createImageBufferFromHost(const Image &image,
     descriptor.viewFormats = nullptr;
     descriptor.usage = (
         wgpu::TextureUsage::TextureBinding | // to read texture in shaders
-        wgpu::TextureUsage::CopyDst | // to upload input
+        wgpu::TextureUsage::CopyDst | // to be used as destination in copy operations
         additionalFlags
         );
 
-    auto gpuTexture = device.CreateTexture(&descriptor);
-    auto queue = device.GetQueue();
+    auto gpuTexture = context.device.CreateTexture(&descriptor);
+    auto queue = context.device.GetQueue();
 
     const wgpu::ImageCopyTexture copyTexture {
         .texture = gpuTexture,
@@ -210,37 +233,37 @@ Context createWebGPUContext()
     return context;
 }
 
-TextureBuffer createEmptyTextureBuffer(const wgpu::Device &device, uint32_t width, uint32_t height)
+TextureBuffer makeEmptyTextureBuffer(uint32_t width, uint32_t height,
+                                       TextureUsage textureUsage,
+                                       TextureFormat texureFormat,
+                                       Context &context)
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
-    descriptor.format = wgpu::TextureFormat::R32Float;
+    descriptor.format = convertFormatToWGPU(texureFormat);
     descriptor.size = { width, height, 1};
     descriptor.sampleCount = 1;
     descriptor.viewFormatCount = 0;
     descriptor.viewFormats = nullptr;
-    descriptor.usage = wgpu::TextureUsage::StorageBinding
-                       | wgpu::TextureUsage::TextureBinding
-                       | wgpu::TextureUsage::CopyDst
-                       | wgpu::TextureUsage::CopySrc;
+    descriptor.usage = convertUsageToWGPU(textureUsage);
 
     return TextureBuffer {
-        .texture = device.CreateTexture(&descriptor),
+        .texture = context.device.CreateTexture(&descriptor),
         .size = descriptor.size
     };
 }
 
-TextureBuffer createImageBuffer(const Image &image, const wgpu::Device &device)
+TextureBuffer makeTextureBufferFromHost(const Image &image, Context &context)
 {
-    return createImageBufferFromHost(image, device, {});
+    return createImageBufferFromHost(image, context, {});
 }
 
-TextureBuffer createReadOnlyTextureBuffer(const Image &image, const wgpu::Device &device)
+TextureBuffer makeReadOnlyTextureBuffer(const Image &image, Context &context)
 {
-    return createImageBufferFromHost(image, device, wgpu::TextureUsage::CopySrc);
+    return createImageBufferFromHost(image, context, wgpu::TextureUsage::CopySrc);
 }
 
-Image createHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
+Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
 {
     // WebGPU requires that the bytes per row is a multiple of 256
     auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
