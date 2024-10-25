@@ -220,6 +220,7 @@ TextureBuffer createEmptyTextureBuffer(const wgpu::Device &device, uint32_t widt
     descriptor.viewFormatCount = 0;
     descriptor.viewFormats = nullptr;
     descriptor.usage = wgpu::TextureUsage::StorageBinding
+                       | wgpu::TextureUsage::TextureBinding
                        | wgpu::TextureUsage::CopyDst
                        | wgpu::TextureUsage::CopySrc;
 
@@ -331,6 +332,7 @@ Image createHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
     image.width = buffer.size.width;
     image.height = buffer.size.height;
     image.data = std::move(data);
+    mapResult.buffer.Unmap();
 
     return image;
 }
