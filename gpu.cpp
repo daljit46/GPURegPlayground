@@ -81,7 +81,7 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     std::cout << "---------------------\n";
 }
 
-ImageBuffer createImageBufferFromHost(const Image &image,
+TextureBuffer createImageBufferFromHost(const Image &image,
                                       const wgpu::Device &device,
                                       const wgpu::TextureUsage& additionalFlags = {})
 {
@@ -120,7 +120,7 @@ ImageBuffer createImageBufferFromHost(const Image &image,
                        &dataLayout,
                        &(descriptor.size));
 
-    return ImageBuffer {
+    return TextureBuffer {
         .texture = gpuTexture,
         .size = descriptor.size
     };
@@ -210,7 +210,7 @@ Context createWebGPUContext()
     return context;
 }
 
-ImageBuffer createEmptyImageBuffer(const wgpu::Device &device, uint32_t width, uint32_t height)
+TextureBuffer createEmptyTextureBuffer(const wgpu::Device &device, uint32_t width, uint32_t height)
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
@@ -223,23 +223,23 @@ ImageBuffer createEmptyImageBuffer(const wgpu::Device &device, uint32_t width, u
                        | wgpu::TextureUsage::CopyDst
                        | wgpu::TextureUsage::CopySrc;
 
-    return ImageBuffer {
+    return TextureBuffer {
         .texture = device.CreateTexture(&descriptor),
         .size = descriptor.size
     };
 }
 
-ImageBuffer createImageBuffer(const Image &image, const wgpu::Device &device)
+TextureBuffer createImageBuffer(const Image &image, const wgpu::Device &device)
 {
     return createImageBufferFromHost(image, device, {});
 }
 
-ImageBuffer createReadOnlyImageBuffer(const Image &image, const wgpu::Device &device)
+TextureBuffer createReadOnlyTextureBuffer(const Image &image, const wgpu::Device &device)
 {
     return createImageBufferFromHost(image, device, wgpu::TextureUsage::CopySrc);
 }
 
-Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
+Image createHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
 {
     // WebGPU requires that the bytes per row is a multiple of 256
     auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
@@ -335,7 +335,7 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
     return image;
 }
 
-void applyShaderTransform(const ImageBuffer &src, ImageBuffer &dst, const std::string &shaderCode, Context &context)
+void applyShaderTransform(const TextureBuffer &src, TextureBuffer &dst, const std::string &shaderCode, Context &context)
 {
 
 }

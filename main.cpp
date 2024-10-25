@@ -9,9 +9,9 @@ int main()
 {
     auto wgpuContext = gpu::createWebGPUContext();
     auto image = Utils::loadFromDisk("data/brain.pgm");
-    auto wgpuImageBuffer = gpu::createReadOnlyImageBuffer(image, wgpuContext.device);
-    auto outputBuffer = gpu::createEmptyImageBuffer(wgpuContext.device);
-    auto outputBufferList = std::vector<gpu::ImageBuffer>{outputBuffer};
+    auto wgpuImageBuffer = gpu::createReadOnlyTextureBuffer(image, wgpuContext.device);
+    auto outputBuffer = gpu::createEmptyTextureBuffer(wgpuContext.device, image.width, image.height);
+    auto outputBufferList = std::vector<gpu::TextureBuffer>{outputBuffer};
     std::vector<gpu::Buffer> outputRawBufferList = {};
     gpu::ComputeOperationData data {
                                    .shader = {

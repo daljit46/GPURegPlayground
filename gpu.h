@@ -16,7 +16,7 @@ struct Context {
     wgpu::Device device;
 };
 
-struct ImageBuffer {
+struct TextureBuffer {
     wgpu::Texture texture;
     wgpu::Extent3D size;
 };
@@ -40,9 +40,9 @@ struct ComputeOperation {
 struct ComputeOperationData {
     ShaderEntry shader;
     std::vector<Buffer> inputBuffers;
-    std::vector<ImageBuffer> inputImageBuffers;
+    std::vector<TextureBuffer> inputImageBuffers;
     std::vector<Buffer> outputBuffers;
-    std::vector<ImageBuffer> outputImageBuffers;
+    std::vector<TextureBuffer> outputImageBuffers;
 };
 
 struct WorkgroupSize {
@@ -57,14 +57,14 @@ struct WorkgroupDimensions {
     uint32_t z = 1;
 };
 
-[[nodiscard]] ImageBuffer createEmptyImageBuffer(const wgpu::Device& device, uint32_t width, uint32_t height);
-[[nodiscard]] ImageBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
-[[nodiscard]] ImageBuffer createReadOnlyImageBuffer(const Image& image, const wgpu::Device& device);
-[[nodiscard]] Image createHostImageFromBuffer(const ImageBuffer& buffer, Context& context);
+[[nodiscard]] TextureBuffer createEmptyTextureBuffer(const wgpu::Device& device, uint32_t width, uint32_t height);
+[[nodiscard]] TextureBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
+[[nodiscard]] TextureBuffer createReadOnlyTextureBuffer(const Image& image, const wgpu::Device& device);
+[[nodiscard]] Image createHostImageFromBuffer(const TextureBuffer& buffer, Context& context);
 
 wgpu::ShaderModule createShaderModule(const std::string& name, const std::string& code, const Context& context);
 
-void applyShaderTransform(const ImageBuffer& src, ImageBuffer& dst, const std::string& shaderCode, Context& context);
+void applyShaderTransform(const TextureBuffer& src, TextureBuffer& dst, const std::string& shaderCode, Context& context);
 
 // Dispatches a computer shader with the given input and output buffers and images
 ComputeOperation createComputeOperation(ComputeOperationData &operationData, Context &context);
