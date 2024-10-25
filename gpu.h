@@ -57,7 +57,7 @@ struct WorkgroupDimensions {
     uint32_t z = 1;
 };
 
-[[nodiscard]] ImageBuffer createEmptyImageBuffer(const wgpu::Device& device);
+[[nodiscard]] ImageBuffer createEmptyImageBuffer(const wgpu::Device& device, uint32_t width, uint32_t height);
 [[nodiscard]] ImageBuffer createImageBuffer(const Image& image, const wgpu::Device& device);
 [[nodiscard]] ImageBuffer createReadOnlyImageBuffer(const Image& image, const wgpu::Device& device);
 [[nodiscard]] Image createHostImageFromBuffer(const ImageBuffer& buffer, Context& context);

@@ -210,16 +210,18 @@ Context createWebGPUContext()
     return context;
 }
 
-ImageBuffer createEmptyImageBuffer(const wgpu::Device &device)
+ImageBuffer createEmptyImageBuffer(const wgpu::Device &device, uint32_t width, uint32_t height)
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
     descriptor.format = wgpu::TextureFormat::R32Float;
-    descriptor.size = {1, 1, 1};
+    descriptor.size = { width, height, 1};
     descriptor.sampleCount = 1;
     descriptor.viewFormatCount = 0;
     descriptor.viewFormats = nullptr;
-    descriptor.usage = wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::CopyDst;
+    descriptor.usage = wgpu::TextureUsage::StorageBinding
+                       | wgpu::TextureUsage::CopyDst
+                       | wgpu::TextureUsage::CopySrc;
 
     return ImageBuffer {
         .texture = device.CreateTexture(&descriptor),
@@ -245,7 +247,7 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
     };
 
     const auto stride = paddedBytesPerRow(buffer.size.width, 1);
-    constexpr auto pixelSize = sizeof(uint8_t);
+    constexpr auto pixelSize = sizeof(float);
 
     wgpu::CommandEncoderDescriptor descriptor {};
     descriptor.label = "Image buffer to host encoder";
@@ -288,8 +290,10 @@ Image createHostImageFromBuffer(const ImageBuffer &buffer, Context &context)
         mapResult->ready = true;
         if(status == WGPUBufferMapAsyncStatus_Success) {
             const auto *const bufferData =  mapResult->buffer.GetConstMappedRange();
+            if(bufferData == nullptr) {
+                throw std::runtime_error("Failed to get mapped range of buffer");
+            }
             mapResult->data = reinterpret_cast<const uint8_t*>(bufferData);
-            mapResult->buffer.Unmap();
         }
         else {
             throw std::runtime_error("Failed to map buffer to host: " + std::to_string(status));
