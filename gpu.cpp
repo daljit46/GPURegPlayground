@@ -99,6 +99,7 @@ wgpu::TextureFormat convertFormatToWGPU(TextureFormat format)
     switch(format) {
         case TextureFormat::R8Unorm: return wgpu::TextureFormat::R8Unorm;
         case TextureFormat::R32Float: return wgpu::TextureFormat::R32Float;
+        case TextureFormat::RGBA8Unorm: return wgpu::TextureFormat::RGBA8Unorm;
         default: return wgpu::TextureFormat::Undefined;
     }
 }
@@ -233,19 +234,16 @@ Context createWebGPUContext()
     return context;
 }
 
-TextureBuffer makeEmptyTextureBuffer(uint32_t width, uint32_t height,
-                                       TextureUsage textureUsage,
-                                       TextureFormat texureFormat,
-                                       Context &context)
+TextureBuffer makeEmptyTextureBuffer(const TextureSpecification &spec, Context &context)
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
-    descriptor.format = convertFormatToWGPU(texureFormat);
-    descriptor.size = { width, height, 1};
+    descriptor.format = convertFormatToWGPU(spec.format);
+    descriptor.size = { spec.width, spec.height, 1};
     descriptor.sampleCount = 1;
     descriptor.viewFormatCount = 0;
     descriptor.viewFormats = nullptr;
-    descriptor.usage = convertUsageToWGPU(textureUsage);
+    descriptor.usage = convertUsageToWGPU(spec.usage);
 
     return TextureBuffer {
         .texture = context.device.CreateTexture(&descriptor),
@@ -270,8 +268,8 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
         return (width * bytesPerPixel + 255) & ~255;
     };
 
-    const auto stride = paddedBytesPerRow(buffer.size.width, 1);
-    constexpr auto pixelSize = sizeof(float);
+    constexpr auto pixelSize = sizeof(uint8_t);
+    const auto stride = paddedBytesPerRow(buffer.size.width, pixelSize);
 
     wgpu::CommandEncoderDescriptor descriptor {};
     descriptor.label = "Image buffer to host encoder";
@@ -280,7 +278,7 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
 
     wgpu::BufferDescriptor outputBufferDescriptor {
         .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
-        .size = uint64_t{stride * buffer.size.height * pixelSize}
+        .size = uint64_t{stride * buffer.size.height}
     };
     outputBufferDescriptor.mappedAtCreation = false;
 
@@ -348,13 +346,15 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
 
     for(uint32_t y = 0; y < buffer.size.height; ++y) {
         const auto rowStart = mapResult.data + y * stride;
-        data.insert(data.end(), rowStart, rowStart + buffer.size.width);
+        data.insert(data.end(), rowStart, rowStart + buffer.size.width * pixelSize);
     }
 
     Image image;
     image.width = buffer.size.width;
     image.height = buffer.size.height;
     image.data = std::move(data);
+
+
     mapResult.buffer.Unmap();
 
     return image;
@@ -505,7 +505,7 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
 }
 
 void dispatchOperation(const ComputeOperation& operation,
-                       WorkgroupDimensions workgroupDimensions,
+                       WorkgroupGrid workgroupDimensions,
                        Context& context)
 {
     wgpu::CommandEncoder encoder = context.device.CreateCommandEncoder();
