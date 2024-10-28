@@ -39,7 +39,7 @@ int main()
         float translationX = 0.0F;
         float translationY = 0.0F;
         float _padding = 0.0F;
-    } parameters = {50, 30, 20 };
+    } parameters = {Utils::degreesToRadians(45.0F), 30, 20 };
 
     auto outputBuffer2 = gpu::makeEmptyTextureBuffer(gpu::TextureSpecification {
                                                          .width = image.width,
