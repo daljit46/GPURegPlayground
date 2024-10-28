@@ -47,6 +47,12 @@ struct WorkgroupSize {
     uint32_t z = 1;
 };
 
+struct WorkgroupGrid {
+    uint32_t x = 1;
+    uint32_t y = 1;
+    uint32_t z = 1;
+};
+
 struct ShaderEntry {
     std::string name;
     std::string entryPoint;
@@ -66,13 +72,9 @@ struct ComputeOperationData {
     std::vector<TextureBuffer> inputImageBuffers;
     std::vector<DataBuffer> outputBuffers;
     std::vector<TextureBuffer> outputImageBuffers;
+    std::vector<wgpu::Sampler> samplers;
 };
 
-struct WorkgroupGrid {
-    uint32_t x = 1;
-    uint32_t y = 1;
-    uint32_t z = 1;
-};
 
 struct Context {
     wgpu::Instance instance;
@@ -88,6 +90,7 @@ Image makeHostImageFromBuffer(const TextureBuffer& buffer, Context& context);
 DataBuffer makeUniformBuffer(const uint8_t* data, size_t size, Context& context);
 
 wgpu::ShaderModule createShaderModule(const std::string& name, const std::string& code, const Context& context);
+wgpu::Sampler createLinearSampler(const Context& context);
 
 void applyShaderTransform(const TextureBuffer& src, TextureBuffer& dst, const std::string& shaderCode, Context& context);
 

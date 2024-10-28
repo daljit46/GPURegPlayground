@@ -11,6 +11,7 @@ struct Parameters {
 @group(0) @binding(0) var<uniform> params: Parameters;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 @group(0) @binding(2) var outputTexture: texture_storage_2d<r8unorm, write>;
+@group(0) @binding(3) var linearSampler: sampler;
 
 @compute @workgroup_size({{workgroup_size}})
 fn computeTransform(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -27,6 +28,9 @@ fn computeTransform(@builtin(global_invocation_id) id: vec3<u32>) {
 
     // Read the input image and write it to the output
     // using the transformed coordinates
-    let color = textureLoad(inputTexture, vec2<i32>(id.xy), 0);
-    textureStore(outputTexture, vec2<i32>(translated), color);
+    // we can use the linear sampler via textureSampleLevel
+    // to get the bilinearly interpolated value
+
+    let color = textureSampleLevel(inputTexture, linearSampler, uv);
+    textureStore(outputTexture, vec2<u32>(translated), color);
 }

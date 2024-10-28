@@ -391,7 +391,7 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
     uint8_t bindingIndex = 0;
 
     // Create layout entries for uniform buffers
-    for(const auto uniformBufferPtr : data.uniformBuffers) {
+    for(const auto &uniformBufferPtr : data.uniformBuffers) {
         const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -479,6 +479,22 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
+    for(const auto &sampler : data.samplers) {
+        const wgpu::BindGroupLayoutEntry entry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .sampler = wgpu::SamplerBindingLayout {
+                .type = wgpu::SamplerBindingType::Filtering
+            }
+        };
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = entry.binding,
+            .sampler = sampler
+        };
+        layoutEntries.push_back(entry);
+        bindGroupEntries.push_back(bindGroupEntry);
+    }
+
     const auto layoutDescLabel = data.shader.name + " layout descriptor";
     const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor {
         .label = layoutDescLabel.c_str(),
@@ -562,6 +578,21 @@ void dispatchOperation(const ComputeOperation& operation,
     auto commands = encoder.Finish();
     auto queue = context.device.GetQueue();
     queue.Submit(1, &commands);
+}
+
+wgpu::Sampler createLinearSampler(const Context &context)
+{
+    wgpu::SamplerDescriptor descriptor {};
+    descriptor.minFilter = wgpu::FilterMode::Linear;
+    descriptor.magFilter = wgpu::FilterMode::Linear;
+    descriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+    descriptor.addressModeU = wgpu::AddressMode::Undefined;
+    descriptor.addressModeV = wgpu::AddressMode::Undefined;
+    descriptor.addressModeW = wgpu::AddressMode::Undefined;
+    descriptor.lodMinClamp = 0.0F;
+    descriptor.lodMaxClamp = 0.0F;
+
+    return context.device.CreateSampler(&descriptor);
 }
 
 }

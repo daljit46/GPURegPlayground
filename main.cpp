@@ -21,24 +21,24 @@ int main()
 
     const gpu::WorkgroupSize workgroupSize {16, 16, 1};
     gpu::ComputeOperationData data {
-                                   .shader = {
-                                       .name="sobelx",
-                                       .entryPoint = "computeSobelX",
-                                       .code = Utils::readFile("shaders/gradientx.wgsl"),
-                                       .workgroupSize = workgroupSize
-                                   },
-                                   .inputImageBuffers = { wgpuImageBuffer },
-                                   .outputImageBuffers = { outputBuffer },
-                                   };
+        .shader = {
+            .name="sobelx",
+            .entryPoint = "computeSobelX",
+            .code = Utils::readFile("shaders/gradientx.wgsl"),
+            .workgroupSize = workgroupSize
+        },
+        .inputImageBuffers = { wgpuImageBuffer },
+        .outputImageBuffers = { outputBuffer },
+    };
 
     auto computeOp = gpu::createComputeOperation(data, wgpuContext);
     gpu::dispatchOperation(computeOp, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
 
     struct TransformationParameters {
-        float rotationAngle = 0.0f;
-        float translationX = 0.0f;
-        float translationY = 0.0f;
-        float _padding = 0.0f;
+        float rotationAngle = 0.0F;
+        float translationX = 0.0F;
+        float translationY = 0.0F;
+        float _padding = 0.0F;
     } parameters = {50, 30, 20 };
 
     auto outputBuffer2 = gpu::makeEmptyTextureBuffer(gpu::TextureSpecification {
@@ -50,18 +50,19 @@ int main()
                                                      wgpuContext);
 
     gpu::ComputeOperationData data2 {
-                                    .shader {
-                                        .name = "transform",
-                                        .entryPoint = "computeTransform",
-                                        .code = Utils::readFile("shaders/transformimage.wgsl"),
-                                        .workgroupSize = workgroupSize
-                                    },
-                                    .uniformBuffers = { gpu::makeUniformBuffer(reinterpret_cast<uint8_t*>(&parameters),
-                                                                              sizeof(TransformationParameters),
-                                                                              wgpuContext) },
-                                    .inputImageBuffers = { wgpuImageBuffer },
-                                    .outputImageBuffers = { outputBuffer2 },
-                                    };
+        .shader {
+            .name = "transform",
+            .entryPoint = "computeTransform",
+            .code = Utils::readFile("shaders/transformimage.wgsl"),
+            .workgroupSize = workgroupSize
+        },
+        .uniformBuffers = { gpu::makeUniformBuffer(reinterpret_cast<uint8_t*>(&parameters),
+                                                  sizeof(TransformationParameters),
+                                                  wgpuContext) },
+        .inputImageBuffers = { wgpuImageBuffer },
+        .outputImageBuffers = { outputBuffer2 },
+        .samplers = { gpu::createLinearSampler(wgpuContext) }
+    };
 
     auto computeOp2 = gpu::createComputeOperation(data2, wgpuContext);
     gpu::dispatchOperation(computeOp2, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
