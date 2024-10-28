@@ -14,4 +14,7 @@ enum ReadFileMode {
     Binary
 };
 std::string readFile(const std::filesystem::path &filePath, ReadFileMode mode = ReadFileMode::Text);
+
+// Replaces all placeholders of the form {{value}} with the given value
+std::string replacePlaceholder(std::string_view str, std::string_view placeholder, std::string_view value);
 }

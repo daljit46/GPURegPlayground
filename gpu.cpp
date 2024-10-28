@@ -476,12 +476,16 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
     };
     const wgpu::PipelineLayout pipelineLayout = context.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
 
+    const std::string workgroupSizeStr = std::to_string(data.shader.workgroupSize.x) + ", " +
+                                         std::to_string(data.shader.workgroupSize.y) + ", " +
+                                         std::to_string(data.shader.workgroupSize.z);
+    const auto shaderCode = Utils::replacePlaceholder(data.shader.code, "workgroup_size", workgroupSizeStr);
     const auto computePipelineLabel = data.shader.name + " compute pipeline";
     const wgpu::ComputePipelineDescriptor computePipelineDescriptor {
         .label = computePipelineLabel.c_str(),
         .layout = pipelineLayout,
         .compute = wgpu::ProgrammableStageDescriptor {
-            .module = createShaderModule(data.shader.name, data.shader.code, context),
+            .module = createShaderModule(data.shader.name, shaderCode, context),
             .entryPoint = data.shader.entryPoint.c_str()
         },
     };

@@ -39,10 +39,17 @@ struct Buffer {
     wgpu::Extent3D size;
 };
 
+struct WorkgroupSize {
+    uint32_t x = 16;
+    uint32_t y = 16;
+    uint32_t z = 1;
+};
+
 struct ShaderEntry {
     std::string name;
-    std::string code;
     std::string entryPoint;
+    std::string code;
+    WorkgroupSize workgroupSize;
 };
 
 struct ComputeOperation {
@@ -56,12 +63,6 @@ struct ComputeOperationData {
     std::vector<TextureBuffer> inputImageBuffers;
     std::vector<Buffer> outputBuffers;
     std::vector<TextureBuffer> outputImageBuffers;
-};
-
-struct WorkgroupSize {
-    uint32_t x = 16;
-    uint32_t y = 16;
-    uint32_t z = 0;
 };
 
 struct WorkgroupGrid {

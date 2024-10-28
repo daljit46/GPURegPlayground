@@ -69,3 +69,26 @@ std::string Utils::readFile(const std::filesystem::path &filePath, ReadFileMode 
     return result;
 
 }
+
+std::string Utils::replacePlaceholder(std::string_view str, std::string_view placeholder, std::string_view value)
+{
+    std::string result;
+    result.reserve(str.size());
+
+    // Placeholders are of the form {{value}} (spaces inside the braces are ignored)
+    const auto placeholderSize = placeholder.size();
+    const auto valueSize = value.size();
+
+    for(size_t i = 0; i < str.size(); ++i) {
+        if(str[i] == '{' && i + placeholderSize + 2 < str.size() && str[i + 1] == '{') {
+            if(str.substr(i + 2, placeholderSize) == placeholder) {
+                result += value;
+                i += placeholderSize + 3;
+                continue;
+            }
+        }
+        result += str[i];
+    }
+
+    return result;
+}

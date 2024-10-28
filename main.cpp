@@ -19,19 +19,20 @@ int main()
                                                     },
                                                     wgpuContext);
 
-    auto outputBufferList = std::vector<gpu::TextureBuffer>{outputBuffer};
+    const gpu::WorkgroupSize workgroupSize {16, 16, 1};
     gpu::ComputeOperationData data {
                                    .shader = {
                                        .name="sobelx",
-                                       .code=Utils::readFile("shaders/transformimage.wgsl"),
                                        .entryPoint = "computeSobelX",
+                                       .code = Utils::readFile("shaders/gradientx.wgsl"),
+                                       .workgroupSize = workgroupSize
                                    },
-                                   .inputImageBuffers = {wgpuImageBuffer},
-                                   .outputImageBuffers = outputBufferList,
+                                   .inputImageBuffers = { wgpuImageBuffer },
+                                   .outputImageBuffers = { outputBuffer },
                                    };
 
     auto computeOp = gpu::createComputeOperation(data, wgpuContext);
-    gpu::dispatchOperation(computeOp, gpu::WorkgroupGrid {image.width / 8, image.height / 8, 1}, wgpuContext);
+    gpu::dispatchOperation(computeOp, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
 
     auto outputImage = gpu::makeHostImageFromBuffer(outputBuffer, wgpuContext);
     Utils::saveToDisk(outputImage, "data/brain_sobelx.pgm");
