@@ -39,6 +39,7 @@ add_custom_command(TARGET GPURegPlayground PRE_BUILD
 )
 
 add_custom_target(shaders SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gradientx.wgsl
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transformimage.wgsl
 )
 

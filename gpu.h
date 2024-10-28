@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <webgpu/webgpu_cpp.h>
 
 #include <cstdint>
@@ -11,7 +12,7 @@ class Image;
 namespace gpu {
 
 
-enum class TextureUsage {
+enum class ResourceUsage {
     ReadOnly,
     ReadWrite
 };
@@ -25,8 +26,8 @@ enum class TextureFormat {
 struct TextureSpecification {
     uint32_t width = 0;
     uint32_t height = 0;
-    TextureFormat format;
-    TextureUsage usage;
+    TextureFormat format = TextureFormat::R8Unorm;
+    ResourceUsage usage = ResourceUsage::ReadOnly;
 };
 
 struct TextureBuffer {
@@ -34,9 +35,10 @@ struct TextureBuffer {
     wgpu::Extent3D size;
 };
 
-struct Buffer {
+struct DataBuffer {
     wgpu::Buffer buffer;
-    wgpu::Extent3D size;
+    ResourceUsage usage = ResourceUsage::ReadOnly;
+    size_t size = 0;
 };
 
 struct WorkgroupSize {
@@ -59,9 +61,10 @@ struct ComputeOperation {
 
 struct ComputeOperationData {
     ShaderEntry shader;
-    std::vector<Buffer> inputBuffers;
+    std::vector<DataBuffer> uniformBuffers;
+    std::vector<DataBuffer> inputBuffers;
     std::vector<TextureBuffer> inputImageBuffers;
-    std::vector<Buffer> outputBuffers;
+    std::vector<DataBuffer> outputBuffers;
     std::vector<TextureBuffer> outputImageBuffers;
 };
 
@@ -81,6 +84,8 @@ TextureBuffer makeEmptyTextureBuffer(const TextureSpecification& spec, Context &
 TextureBuffer makeTextureBufferFromHost(const Image& image, Context &context);
 TextureBuffer makeReadOnlyTextureBuffer(const Image& image, Context &context);
 Image makeHostImageFromBuffer(const TextureBuffer& buffer, Context& context);
+
+DataBuffer makeUniformBuffer(const uint8_t* data, size_t size, Context& context);
 
 wgpu::ShaderModule createShaderModule(const std::string& name, const std::string& code, const Context& context);
 

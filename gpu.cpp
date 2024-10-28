@@ -81,13 +81,13 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     std::cout << "---------------------\n";
 }
 
-wgpu::TextureUsage convertUsageToWGPU(TextureUsage usage)
+wgpu::TextureUsage convertUsageToWGPU(ResourceUsage usage)
 {
     switch(usage) {
-    case TextureUsage::ReadOnly: {
+    case ResourceUsage::ReadOnly: {
         return wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
     }
-    case TextureUsage::ReadWrite: {
+    case ResourceUsage::ReadWrite: {
         return wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst;
     }
     default: return wgpu::TextureUsage::None;
@@ -389,6 +389,26 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
                           );
 
     uint8_t bindingIndex = 0;
+
+    // Create layout entries for uniform buffers
+    for(const auto uniformBufferPtr : data.uniformBuffers) {
+        const wgpu::BindGroupLayoutEntry layoutEntry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .buffer = wgpu::BufferBindingLayout {
+                .type = wgpu::BufferBindingType::Uniform
+            }
+        };
+
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = layoutEntry.binding,
+            .buffer = uniformBufferPtr.buffer
+        };
+        layoutEntries.push_back(layoutEntry);
+        bindGroupEntries.push_back(bindGroupEntry);
+    }
+
+
     for(const auto& imageBuffer : data.inputImageBuffers) {
         const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
@@ -505,6 +525,26 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
     return ComputeOperation {
         .pipeline = context.device.CreateComputePipeline(&computePipelineDescriptor),
         .bindGroup = context.device.CreateBindGroup(&bindGroupDescriptor)
+    };
+}
+
+DataBuffer makeUniformBuffer(const uint8_t *data, size_t size, Context &context)
+{
+    assert(size % 16 == 0);
+    wgpu::BufferDescriptor descriptor;
+    descriptor.size = size;
+    descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    descriptor.mappedAtCreation = false;
+
+    auto buffer = context.device.CreateBuffer(&descriptor);
+    auto queue = context.device.GetQueue();
+
+    queue.WriteBuffer(buffer, 0, data, size);
+
+    return DataBuffer {
+        .buffer = buffer,
+        .usage = ResourceUsage::ReadWrite,
+        .size = size
     };
 }
 
