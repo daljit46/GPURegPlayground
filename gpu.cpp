@@ -595,4 +595,9 @@ wgpu::Sampler createLinearSampler(const Context &context)
     return context.device.CreateSampler(&descriptor);
 }
 
+void updateUniformBuffer(const DataBuffer &buffer, const uint8_t *data, size_t size, Context &context)
+{
+    context.device.GetQueue().WriteBuffer(buffer.buffer, 0, data, size);
+}
+
 }
