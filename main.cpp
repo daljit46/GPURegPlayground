@@ -7,7 +7,7 @@
 #include "utils.h"
 
 int main()
-{   
+{
     auto wgpuContext = gpu::createWebGPUContext();
     auto image = Utils::loadFromDisk("data/brain.pgm");
     auto brainImageBuffer = gpu::makeReadOnlyTextureBuffer(image, wgpuContext);
@@ -20,6 +20,11 @@ int main()
                                                     wgpuContext);
 
     const gpu::WorkgroupSize workgroupSize {16, 16, 1};
+
+    auto calcWorkgroupGrid = [](const Image& image, const gpu::WorkgroupSize& workgroupSize) {
+        return gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1};
+    };
+
     gpu::ComputeOperationData data {
         .shader = {
             .name="sobelx",
@@ -32,7 +37,7 @@ int main()
     };
 
     auto gradientOp = gpu::createComputeOperation(data, wgpuContext);
-    gpu::dispatchOperation(gradientOp, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
+    gpu::dispatchOperation(gradientOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
 
     struct TransformationParameters {
         float rotationAngle = 0.0F;
@@ -65,7 +70,7 @@ int main()
     };
 
     auto transformOp = gpu::createComputeOperation(data2, wgpuContext);
-    gpu::dispatchOperation(transformOp, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
+    gpu::dispatchOperation(transformOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
 
     auto outputImage = gpu::makeHostImageFromBuffer(outputBuffer, wgpuContext);
     auto outputImage2 = gpu::makeHostImageFromBuffer(outputBuffer2, wgpuContext);
