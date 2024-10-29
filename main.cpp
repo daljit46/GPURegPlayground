@@ -7,10 +7,10 @@
 #include "utils.h"
 
 int main()
-{
+{   
     auto wgpuContext = gpu::createWebGPUContext();
     auto image = Utils::loadFromDisk("data/brain.pgm");
-    auto wgpuImageBuffer = gpu::makeReadOnlyTextureBuffer(image, wgpuContext);
+    auto brainImageBuffer = gpu::makeReadOnlyTextureBuffer(image, wgpuContext);
     auto outputBuffer = gpu::makeEmptyTextureBuffer(gpu::TextureSpecification {
                                                         .width = image.width,
                                                         .height = image.height,
@@ -27,18 +27,18 @@ int main()
             .code = Utils::readFile("shaders/gradientx.wgsl"),
             .workgroupSize = workgroupSize
         },
-        .inputImageBuffers = { wgpuImageBuffer },
+        .inputImageBuffers = { brainImageBuffer },
         .outputImageBuffers = { outputBuffer },
     };
 
-    auto computeOp = gpu::createComputeOperation(data, wgpuContext);
-    gpu::dispatchOperation(computeOp, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
+    auto gradientOp = gpu::createComputeOperation(data, wgpuContext);
+    gpu::dispatchOperation(gradientOp, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
 
     struct TransformationParameters {
         float rotationAngle = 0.0F;
         float translationX = 0.0F;
         float translationY = 0.0F;
-        float _padding = 0.0F;
+        float _padding = 0.0F; // WGSL requires to align to 16 bytes
     } parameters = {Utils::degreesToRadians(45.0F), 30, 20 };
 
     auto outputBuffer2 = gpu::makeEmptyTextureBuffer(gpu::TextureSpecification {
@@ -59,13 +59,13 @@ int main()
         .uniformBuffers = { gpu::makeUniformBuffer(reinterpret_cast<uint8_t*>(&parameters),
                                                   sizeof(TransformationParameters),
                                                   wgpuContext) },
-        .inputImageBuffers = { wgpuImageBuffer },
+        .inputImageBuffers = { outputBuffer },
         .outputImageBuffers = { outputBuffer2 },
         .samplers = { gpu::createLinearSampler(wgpuContext) }
     };
 
-    auto computeOp2 = gpu::createComputeOperation(data2, wgpuContext);
-    gpu::dispatchOperation(computeOp2, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
+    auto transformOp = gpu::createComputeOperation(data2, wgpuContext);
+    gpu::dispatchOperation(transformOp, gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1}, wgpuContext);
 
     auto outputImage = gpu::makeHostImageFromBuffer(outputBuffer, wgpuContext);
     auto outputImage2 = gpu::makeHostImageFromBuffer(outputBuffer2, wgpuContext);
