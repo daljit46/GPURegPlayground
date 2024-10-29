@@ -15,22 +15,26 @@ struct Parameters {
 
 @compute @workgroup_size({{workgroup_size}})
 fn computeTransform(@builtin(global_invocation_id) id: vec3<u32>) {
-    // We need to rotate the image about its center
-    let dim : vec2<u32> = textureDimensions(inputTexture, 0);
-    let center = vec2<f32>(dim) / 2.0;
-    let uv = vec2<f32>(id.xy);
-    let uvFromCenter = uv - center;
-    let rotated = vec2<f32>(
-        uvFromCenter.x * cos(params.angle) - uvFromCenter.y * sin(params.angle),
-        uvFromCenter.x * sin(params.angle) + uvFromCenter.y * cos(params.angle)
+    let dim = vec2<f32>(textureDimensions(inputTexture, 0));
+    let coords : vec2<f32> = vec2<f32>(id.xy);
+
+    if (coords.x >= dim.x || coords.y >= dim.y) {
+        return;
+    }
+
+    let center : vec2<f32> = vec2<f32>(dim.xy / 2.0);
+    let offset : vec2<f32> = coords - center;
+
+    let cosTheta = cos(params.angle);
+    let sinTheta = sin(params.angle);
+
+    let mat = mat2x2<f32>(
+        cosTheta, -sinTheta,
+        sinTheta, cosTheta
     );
-    let translated = rotated + center + vec2<f32>(params.tx, params.ty);
 
-    // Read the input image and write it to the output
-    // using the transformed coordinates
-    // we can use the linear sampler via textureSampleLevel
-    // to get the bilinearly interpolated value
+    let transformed = mat * offset + vec2<f32>(params.tx, params.ty) + center;
 
-    let color = textureSampleLevel(inputTexture, linearSampler, uv);
-    textureStore(outputTexture, vec2<u32>(translated), color);
+    let color = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0);
+    textureStore(outputTexture, id.xy, vec4<f32>(color.r, 1.0, 0.0, 1.0));
 }
