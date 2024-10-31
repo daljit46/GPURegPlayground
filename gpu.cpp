@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -360,6 +361,60 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
     return image;
 }
 
+
+
+void readBufferFromGPU(void *data, const DataBuffer &buffer, Context &context)
+{
+    wgpu::BufferDescriptor outputBufferDescriptor {
+        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+        .size = buffer.size
+    };
+    outputBufferDescriptor.mappedAtCreation = false;
+
+    auto outputBuffer = context.device.CreateBuffer(&outputBufferDescriptor);
+
+    wgpu::CommandEncoder encoder = context.device.CreateCommandEncoder();
+    encoder.CopyBufferToBuffer(buffer.buffer, 0, outputBuffer, 0, buffer.size);
+    auto commands = encoder.Finish();
+    auto queue = context.device.GetQueue();
+    queue.Submit(1, &commands);
+
+    struct MapResult {
+        bool ready = false;
+        wgpu::Buffer buffer;
+        void* data = nullptr;
+    };
+
+    wgpu::BufferMapCallback onBufferMapped = [](WGPUBufferMapAsyncStatus status, void* userdata) {
+        auto* mapResult = reinterpret_cast<MapResult*>(userdata);
+        mapResult->ready = true;
+        if(status == WGPUBufferMapAsyncStatus_Success) {
+            mapResult->data = (void*)mapResult->buffer.GetConstMappedRange();
+        } else {
+            throw std::runtime_error("Failed to map buffer to host: " + std::to_string(status));
+        }
+    };
+
+    MapResult mapResult {
+        .buffer = outputBuffer
+    };
+
+    wgpu::BufferMapCallbackInfo mappingInfo {};
+    mappingInfo.mode = wgpu::CallbackMode::WaitAnyOnly;
+    mappingInfo.callback = onBufferMapped;
+    mappingInfo.userdata = reinterpret_cast<void*>(&mapResult);
+
+    auto bufferMapped = outputBuffer.MapAsync(wgpu::MapMode::Read,
+                                              0,
+                                              outputBuffer.GetSize(),
+                                              mappingInfo
+                                              );
+    context.instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
+    memcpy(data, mapResult.data, buffer.size);
+    outputBuffer.Unmap();
+}
+
+
 void applyShaderTransform(const TextureBuffer &src, TextureBuffer &dst, const std::string &shaderCode, Context &context)
 {
 
@@ -541,6 +596,22 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
     return ComputeOperation {
         .pipeline = context.device.CreateComputePipeline(&computePipelineDescriptor),
         .bindGroup = context.device.CreateBindGroup(&bindGroupDescriptor)
+    };
+}
+
+DataBuffer makeEmptyDataBuffer(size_t size, ResourceUsage usage, Context &context)
+{
+    // TODO implement usage flags properly
+    assert(size % 16 == 0);
+    wgpu::BufferDescriptor descriptor {
+        .usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage,
+        .size = size,
+        .mappedAtCreation = false
+    };
+    return DataBuffer {
+        .buffer = context.device.CreateBuffer(&descriptor),
+        .usage = ResourceUsage::ReadWrite,
+        .size = size
     };
 }
 

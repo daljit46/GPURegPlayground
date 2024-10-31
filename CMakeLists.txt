@@ -11,6 +11,7 @@ add_executable(GPURegPlayground main.cpp
     gpu.h gpu.cpp
     utils.h utils.cpp
     image.h
+    shaders/updategradients.wgsl
 )
 
 include(FetchContent)
@@ -40,7 +41,9 @@ add_custom_command(TARGET GPURegPlayground PRE_BUILD
 
 add_custom_target(shaders SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gradientx.wgsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gradienty.wgsl
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transformimage.wgsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/updategradients.wgsl
 )
 
 add_custom_command(TARGET GPURegPlayground PRE_BUILD
