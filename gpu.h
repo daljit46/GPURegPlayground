@@ -90,10 +90,12 @@ Image makeHostImageFromBuffer(const TextureBuffer& buffer, Context& context);
 DataBuffer makeEmptyDataBuffer(size_t size, ResourceUsage usage, Context& context);
 DataBuffer makeUniformBuffer(const uint8_t* data, size_t size, Context& context);
 void readBufferFromGPU(void* data, const DataBuffer& buffer, Context& context);
+void updateDataBuffer(void* data, const DataBuffer& buffer, Context& context);
 
 wgpu::ShaderModule createShaderModule(const std::string& name, const std::string& code, const Context& context);
 wgpu::Sampler createLinearSampler(const Context& context);
 
+void updateUniformBuffer(const DataBuffer &buffer, const uint8_t *data, size_t size, Context &context);
 void applyShaderTransform(const TextureBuffer& src, TextureBuffer& dst, const std::string& shaderCode, Context& context);
 
 ComputeOperation createComputeOperation(ComputeOperationData &operationData, Context &context);

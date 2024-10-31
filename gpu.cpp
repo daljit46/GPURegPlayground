@@ -671,4 +671,9 @@ void updateUniformBuffer(const DataBuffer &buffer, const uint8_t *data, size_t s
     context.device.GetQueue().WriteBuffer(buffer.buffer, 0, data, size);
 }
 
+void updateDataBuffer(void *data, const DataBuffer &buffer, Context &context)
+{
+    context.device.GetQueue().WriteBuffer(buffer.buffer, 0, data, buffer.size);
+}
+
 }

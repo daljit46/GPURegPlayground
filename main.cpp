@@ -52,7 +52,7 @@ int main()
                                                   };
 
         auto gradientXOp = gpu::createComputeOperation(gradientXOpData, wgpuContext);
-        auto gradientYOp = gpu::createComputeOperation(gradientXOpData, wgpuContext);
+        auto gradientYOp = gpu::createComputeOperation(gradientYOpData, wgpuContext);
         gpu::dispatchOperation(gradientXOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
         gpu::dispatchOperation(gradientYOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
 
@@ -109,12 +109,24 @@ int main()
         constexpr float threshold = 0.01F;
         constexpr int maxIterations = 100;
         int i = 0;
+
+        const auto angleLearningRate = 0.0001;
+        const auto txLearningRate = 0.1;
+        const auto tyLearningRate = 0.1;
+
         while(i < maxIterations) {
             gpu::dispatchOperation(updateGradientsOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
 
             // Read the output buffer and check if the SSD is below a threshold
             std::array<int32_t, 4> data;
             gpu::readBufferFromGPU(data.data(), gradientsOutputBuffer, wgpuContext);
+
+            // Update the parameters
+            parameters.rotationAngle -= angleLearningRate * data[0]/1000.0;
+            parameters.translationX -= txLearningRate * data[1]/1000.0;
+            parameters.translationY -= tyLearningRate * data[2]/1000.0;
+
+            gpu::updateUniformBuffer(paramsBuffer, reinterpret_cast<uint8_t*>(&parameters), sizeof(TransformationParameters), wgpuContext);
             // print data
             std::cout << "data: ";
             for(int j = 0; j < 4; ++j) {
@@ -124,6 +136,10 @@ int main()
             // if(data[3] < threshold) {
             //     break;
             // }
+
+            data = {0,0,0,0};
+            gpu::updateDataBuffer(data.data(), gradientsOutputBuffer, wgpuContext);
+
             ++i;
         }
 
@@ -131,6 +147,8 @@ int main()
         // auto outputImage2 = gpu::makeHostImageFromBuffer(outputBuffer2, wgpuContext);
         // Utils::saveToDisk(outputImage, "data/brain_sobelx.pgm");
         // Utils::saveToDisk(outputImage2, "data/brain_transform.pgm");
+        auto gradientYImage = gpu::makeHostImageFromBuffer(gradientYBuffer, wgpuContext);
+        Utils::saveToDisk(gradientYImage, "data/brain_sobely.pgm");
     }
     catch(const std::exception &e) {
         std::cerr << "Error: " << e.what() << std::endl;
