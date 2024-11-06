@@ -23,4 +23,9 @@ T degreesToRadians(T degrees) {
     return degrees * 3.14159265358979323846 / 180.0;
 }
 
+template<typename T>
+T radiansToDegrees(T radians) {
+    return radians * 180.0 / 3.14159265358979323846;
+}
+
 }
