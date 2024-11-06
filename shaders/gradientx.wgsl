@@ -3,7 +3,7 @@
 enable chromium_internal_graphite;
 
 @group(0) @binding(0) var inputTexture: texture_2d<f32>;
-@group(0) @binding(1) var outputTexture: texture_storage_2d<r8unorm, write>;
+@group(0) @binding(1) var<storage, read_write> outputArray: array<f32>;
 
 @compute @workgroup_size({{workgroup_size}})
 fn computeSobelX(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -15,7 +15,9 @@ fn computeSobelX(@builtin(global_invocation_id) id: vec3<u32>) {
     sum += textureLoad(inputTexture, vec2<u32>(id.x + 1, id.y), 0).r * 2.0;
     sum += textureLoad(inputTexture, vec2<u32>(id.x - 1, id.y + 1), 0).r * -1.0;
     sum += textureLoad(inputTexture, vec2<u32>(id.x + 1, id.y + 1), 0).r * 1.0;
-    
-    // Write the result to the output texture
-    textureStore(outputTexture, id.xy, vec4<f32>(sum, 1.0, 0.0, 1.0));
+
+    // Write the result to the output array
+    let dimensions = textureDimensions(inputTexture);
+    let index = id.y * dimensions.x + id.x;
+    outputArray[index] = sum;
 }
