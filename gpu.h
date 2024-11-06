@@ -95,7 +95,7 @@ void updateDataBuffer(void* data, const DataBuffer& buffer, Context& context);
 wgpu::ShaderModule createShaderModule(const std::string& name, const std::string& code, const Context& context);
 wgpu::Sampler createLinearSampler(const Context& context);
 
-void updateUniformBuffer(const DataBuffer &buffer, const uint8_t *data, size_t size, Context &context);
+void updateUniformBuffer(const DataBuffer &buffer, const void *data, size_t size, Context &context);
 void applyShaderTransform(const TextureBuffer& src, TextureBuffer& dst, const std::string& shaderCode, Context& context);
 
 ComputeOperation createComputeOperation(ComputeOperationData &operationData, Context &context);

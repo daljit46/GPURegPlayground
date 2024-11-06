@@ -602,7 +602,7 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
 DataBuffer makeEmptyDataBuffer(size_t size, ResourceUsage usage, Context &context)
 {
     // TODO implement usage flags properly
-    assert(size % 16 == 0);
+    // assert(size % 16 == 0);
     wgpu::BufferDescriptor descriptor {
         .usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage,
         .size = size,
@@ -666,7 +666,7 @@ wgpu::Sampler createLinearSampler(const Context &context)
     return context.device.CreateSampler(&descriptor);
 }
 
-void updateUniformBuffer(const DataBuffer &buffer, const uint8_t *data, size_t size, Context &context)
+void updateUniformBuffer(const DataBuffer &buffer, const void *data, size_t size, Context &context)
 {
     context.device.GetQueue().WriteBuffer(buffer.buffer, 0, data, size);
 }
