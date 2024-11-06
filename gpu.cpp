@@ -464,6 +464,22 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
     }
 
 
+    for(const auto& buffer: data.inputBuffers) {
+        const wgpu::BindGroupLayoutEntry entry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage }
+        };
+
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = entry.binding,
+            .buffer = buffer.buffer
+        };
+
+        layoutEntries.push_back(entry);
+        bindGroupEntries.push_back(bindGroupEntry);
+    }
+
     for(const auto& imageBuffer : data.inputImageBuffers) {
         const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
@@ -479,22 +495,6 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
             .textureView = imageBuffer.texture.CreateView()
         };
         layoutEntries.push_back(layoutEntry);
-        bindGroupEntries.push_back(bindGroupEntry);
-    }
-
-    for(const auto& buffer: data.inputBuffers) {
-        const wgpu::BindGroupLayoutEntry entry {
-            .binding = bindingIndex++,
-            .visibility = wgpu::ShaderStage::Compute,
-            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage }
-        };
-
-        const wgpu::BindGroupEntry bindGroupEntry {
-            .binding = entry.binding,
-            .buffer = buffer.buffer
-        };
-
-        layoutEntries.push_back(entry);
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
