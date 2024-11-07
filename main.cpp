@@ -186,7 +186,7 @@ int main()
         gpu::updateUniformBuffer(paramsBuffer, reinterpret_cast<void*>(&parameters), sizeof(TransformationParameters), wgpuContext);
         gpu::dispatchOperation(transformOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
         auto transformedImage = gpu::makeHostImageFromBuffer(movingImageBuffer, wgpuContext);
-        Utils::saveToDisk(transformedImage, "data/transformed_image.pgm");
+        Utils::saveToDisk(transformedImage, "result.pgm");
 
     }
     catch(const std::exception &e) {
