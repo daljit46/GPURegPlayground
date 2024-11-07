@@ -51,7 +51,7 @@ void Utils::saveToDisk(const Image &image, const std::filesystem::path &imagePat
     file.write(reinterpret_cast<const char*>(image.data.data()), image.data.size());
     file.close();
 
-    std::cout << "Saved image to disk: " << imagePath << " (" << image.width << "x" << image.height << ")" << std::endl;
+    std::cout << "Saved image to disk: " << std::filesystem::absolute(imagePath) << " (" << image.width << "x" << image.height << ")" << std::endl;
 }
 
 std::string Utils::readFile(const std::filesystem::path &filePath, ReadFileMode mode)
