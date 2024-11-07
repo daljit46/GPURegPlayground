@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <thread>
 #include <vector>
+#include <matplot/matplot.h>
 
 #include "image.h"
 #include "gpu.h"
@@ -123,6 +124,8 @@ int main()
         float minTx = 0.0F;
         float minTy = 0.0F;
 
+        std::vector<int32_t> x;
+        std::vector<float> y;
         while(i < maxIterations) {
             gpu::dispatchOperation(transformOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
             gpu::dispatchOperation(gradientXOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
@@ -160,9 +163,16 @@ int main()
             // Reset the gradients before next iteration
             updatedGradients = {0,0,0,0};
             gpu::updateDataBuffer(updatedGradients.data(), gradientsOutputBuffer, wgpuContext);
+            y.push_back(ssd);
+            x.push_back(i);
             ++i;
             std::cout << std::endl;
         }
+
+        matplot::plot(x, y, "-o");
+        matplot::xlabel("Number of iterations");
+        matplot::ylabel("SSD");
+        matplot::show();
 
         std::cout << "Min SSD: " << minSSD << std::endl;
         std::cout << "Min Angle: " << Utils::radiansToDegrees(minAngle) << std::endl;
