@@ -43,7 +43,7 @@ fn updateGradients(@builtin(global_invocation_id) id: vec3<u32>) {
     let sinTheta = sin(params.angle);
 
     let dIdX = gradientBufferX[id.y * u32(dim.x) + id.x];
-    let dIdX = gradientBufferY[id.y * u32(dim.x) + id.x];
+    let dIdY = gradientBufferY[id.y * u32(dim.x) + id.x];
     let valueOriginal : f32 = textureLoad(movingImage, id.xy, 0).r;
     let valueWarped : f32 = textureLoad(referenceImage, id.xy, 0).r;
     let error : f32 = (valueWarped - valueOriginal);
