@@ -136,7 +136,7 @@ int main()
             std::array<int32_t, 4> updatedGradients{};
             gpu::readBufferFromGPU(updatedGradients.data(), gradientsOutputBuffer, wgpuContext);
 
-            const auto ssd = updatedGradients[3]/1000.0F;
+            const auto ssd = updatedGradients[3];
             if(ssd < minSSD) {
                 minSSD = ssd;
                 minAngle = parameters.rotationAngle;
