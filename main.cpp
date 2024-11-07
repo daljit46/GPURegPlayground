@@ -1,4 +1,5 @@
 #include <iostream>
+#include <limits>
 #include <stdint.h>
 #include <thread>
 #include <vector>
@@ -67,7 +68,6 @@ int main()
         auto transformOp = gpu::createComputeOperation(transformData, wgpuContext);
         gpu::dispatchOperation(transformOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
 
-
         gpu::ComputeOperationData gradientXOpData {
                                                   .shader = {
                                                       .name="sobelx",
@@ -130,10 +130,10 @@ int main()
             gpu::dispatchOperation(updateGradientsOp, calcWorkgroupGrid(image, workgroupSize), wgpuContext);
 
             // Read the output buffer and check if the SSD is below a threshold
-            std::array<int32_t, 4> updatedGradients;
+            std::array<int32_t, 4> updatedGradients{};
             gpu::readBufferFromGPU(updatedGradients.data(), gradientsOutputBuffer, wgpuContext);
 
-            const auto ssd = updatedGradients[3]/1000.0;
+            const auto ssd = updatedGradients[3]/1000.0F;
             if(ssd < minSSD) {
                 minSSD = ssd;
                 minAngle = parameters.rotationAngle;
