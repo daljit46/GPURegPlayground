@@ -15,12 +15,20 @@ add_executable(GPURegPlayground main.cpp
 )
 
 include(FetchContent)
+set(FETCHCONTENT_QUIET OFF)
 FetchContent_Declare(
   webgpu
   GIT_REPOSITORY https://github.com/eliemichel/WebGPU-distribution
   GIT_TAG        dawn
 )
 FetchContent_MakeAvailable(webgpu)
+
+FetchContent_Declare(
+    matplotplusplus
+    GIT_REPOSITORY https://github.com/alandefreitas/matplotplusplus
+    GIT_TAG        master
+)
+FetchContent_MakeAvailable(matplotplusplus)
 
 add_library(stb-image INTERFACE)
 target_include_directories(stb-image INTERFACE
@@ -31,6 +39,7 @@ target_include_directories(stb-image INTERFACE
 target_link_libraries(GPURegPlayground PRIVATE
     webgpu_dawn
     stb-image
+    matplot
 )
 
 add_custom_command(TARGET GPURegPlayground PRE_BUILD
