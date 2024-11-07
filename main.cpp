@@ -15,7 +15,7 @@ int main()
 
         auto wgpuContext = gpu::createWebGPUContext();
         auto image = Utils::loadFromDisk("data/brain.pgm");
-        auto referenceImage = Utils::loadFromDisk("data/brain_transform.pgm");
+        auto referenceImage = Utils::loadFromDisk("data/brain_translated.pgm");
         auto originalImageBuffer = gpu::makeReadOnlyTextureBuffer(image, wgpuContext);
         auto referenceImageBuffer = gpu::makeReadOnlyTextureBuffer(referenceImage, wgpuContext);
 
