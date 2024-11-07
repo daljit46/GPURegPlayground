@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+include(CompilerCache)
+use_compiler_cache()
 
 add_executable(GPURegPlayground main.cpp
     gpu.h gpu.cpp
