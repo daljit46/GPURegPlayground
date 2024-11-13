@@ -28,7 +28,7 @@ jobs:
         run: |
           if [ ${{ matrix.os }} == 'ubuntu-latest' ]; then
             sudo apt update
-            sudo apt install ninja-build libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libgl-dev libx11-xcb-dev
+            sudo apt install ninja-build libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libgl-dev libx11-xcb-dev mesa-vulkan-drivers libvulkan1 vulkan-tools vulkan-validationlayers
           elif [ ${{ matrix.os }} == 'macos-latest' ]; then
             brew install ninja
           fi
