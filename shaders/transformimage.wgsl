@@ -28,9 +28,10 @@ fn computeTransform(@builtin(global_invocation_id) id: vec3<u32>) {
     let cosTheta = cos(params.angle);
     let sinTheta = sin(params.angle);
 
+    // WebGPU uses column-major matrices
     let mat = mat2x2<f32>(
-        cosTheta, -sinTheta,
-        sinTheta, cosTheta
+        cosTheta, sinTheta,
+        -sinTheta, cosTheta
     );
 
     let transformed = mat * offset + vec2<f32>(params.tx, params.ty) + center;

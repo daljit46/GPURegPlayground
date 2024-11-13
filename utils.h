@@ -2,12 +2,12 @@
 
 #include <filesystem>
 
-class Image;
+class CpuImage;
 
 namespace Utils {
-[[nodiscard]] Image loadFromDisk(const std::filesystem::path &imagePath);
+[[nodiscard]] CpuImage loadFromDisk(const std::filesystem::path &imagePath);
 
-void saveToDisk(const Image &image, const std::filesystem::path &imagePath);
+void saveToDisk(const CpuImage &image, const std::filesystem::path &imagePath);
 
 enum ReadFileMode {
     Text,

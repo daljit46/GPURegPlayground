@@ -13,7 +13,7 @@
 
 using namespace std::string_literals;
 
-Image Utils::loadFromDisk(const std::filesystem::path &imagePath)
+CpuImage Utils::loadFromDisk(const std::filesystem::path &imagePath)
 {
     if(!std::filesystem::exists(imagePath)) {
         throw std::runtime_error("Image file not found: "s + imagePath.string());
@@ -28,7 +28,7 @@ Image Utils::loadFromDisk(const std::filesystem::path &imagePath)
     }
     std::cout << "Loaded image from disk: " << imagePath << " (" << width << "x" << height << ", " << channels << " channels)" << std::endl;
 
-    Image result;
+    CpuImage result;
     result.width = width;
     result.height = height;
     // TODO: don't copy the data
@@ -38,7 +38,7 @@ Image Utils::loadFromDisk(const std::filesystem::path &imagePath)
     return result;
 }
 
-void Utils::saveToDisk(const Image &image, const std::filesystem::path &imagePath)
+void Utils::saveToDisk(const CpuImage &image, const std::filesystem::path &imagePath)
 {
     using namespace std::string_literals;
 

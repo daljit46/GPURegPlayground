@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-class Image;
+class CpuImage;
 
 namespace gpu {
 
@@ -30,13 +30,18 @@ struct TextureSpecification {
     ResourceUsage usage = ResourceUsage::ReadOnly;
 };
 
-struct TextureBuffer {
-    wgpu::Texture texture;
+struct Texture {
+    wgpu::Texture wgpuHandle;
     wgpu::Extent3D size;
 };
 
+enum class BufferType {
+    Uniform,
+    Storage
+};
+
 struct DataBuffer {
-    wgpu::Buffer buffer;
+    wgpu::Buffer wgpuHandle;
     ResourceUsage usage = ResourceUsage::ReadOnly;
     size_t size = 0;
 };
@@ -65,41 +70,46 @@ struct ComputeOperation {
     wgpu::BindGroup bindGroup;
 };
 
-struct ComputeOperationData {
+struct ComputeOperationDescriptor {
+    // Buffers in shader must be specified in the same order
+    // as they are passed in this struct
     ShaderEntry shader;
     std::vector<DataBuffer> uniformBuffers;
     std::vector<DataBuffer> inputBuffers;
-    std::vector<TextureBuffer> inputImageBuffers;
+    std::vector<Texture> inputTextures;
     std::vector<DataBuffer> outputBuffers;
-    std::vector<TextureBuffer> outputImageBuffers;
+    std::vector<Texture> outputTextures;
     std::vector<wgpu::Sampler> samplers;
 };
 
 
 struct Context {
-    wgpu::Instance instance;
-    wgpu::Adapter adapter;
-    wgpu::Device device;
+    wgpu::Instance instance = nullptr;
+    wgpu::Adapter adapter = nullptr;
+    wgpu::Device device = nullptr;
+
+    [[nodiscard]] static Context newContext();
+
+    Texture makeEmptyTexture(const TextureSpecification& spec);
+    Texture makeTextureFromHost(const CpuImage& image);
+    CpuImage downloadTexture(const Texture& buffer);
+
+    DataBuffer makeEmptyBuffer(size_t size);
+    DataBuffer makeUniformBuffer(const void* data, size_t size);
+    void downloadBuffer(const DataBuffer& dataBuffer, void *data);
+    void writeToBuffer(const DataBuffer& dataBuffer, void* data);
+
+    wgpu::ShaderModule makeShaderModule(const std::string& name, const std::string& code);
+    wgpu::Sampler makeLinearSampler();
+
+    ComputeOperation makeComputeOperation(const ComputeOperationDescriptor &operationDescriptor);
+    void dispatchOperation(const ComputeOperation& operation, WorkgroupGrid workgroupDimensions);
+
+    void updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size);
+
+    using CompletionHandler = std::function<void()>;
+    // Completion handler must be alive until the operation is completed
+    void waitForAllQueueOperations();
 };
-
-TextureBuffer makeEmptyTextureBuffer(const TextureSpecification& spec, Context &context);
-TextureBuffer makeTextureBufferFromHost(const Image& image, Context &context);
-TextureBuffer makeReadOnlyTextureBuffer(const Image& image, Context &context);
-Image makeHostImageFromBuffer(const TextureBuffer& buffer, Context& context);
-
-DataBuffer makeUniformBuffer(const uint8_t* data, size_t size, Context& context);
-
-wgpu::ShaderModule createShaderModule(const std::string& name, const std::string& code, const Context& context);
-wgpu::Sampler createLinearSampler(const Context& context);
-
-void applyShaderTransform(const TextureBuffer& src, TextureBuffer& dst, const std::string& shaderCode, Context& context);
-
-ComputeOperation createComputeOperation(ComputeOperationData &operationData, Context &context);
-
-void dispatchOperation(const ComputeOperation& operation,
-                       WorkgroupGrid workgroupDimensions,
-                       Context& context);
-
-[[nodiscard]] Context createWebGPUContext();
 
 }

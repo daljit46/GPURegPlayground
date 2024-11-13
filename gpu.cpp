@@ -97,17 +97,17 @@ wgpu::TextureUsage convertUsageToWGPU(ResourceUsage usage)
 wgpu::TextureFormat convertFormatToWGPU(TextureFormat format)
 {
     switch(format) {
-        case TextureFormat::R8Unorm: return wgpu::TextureFormat::R8Unorm;
-        case TextureFormat::R32Float: return wgpu::TextureFormat::R32Float;
-        case TextureFormat::RGBA8Unorm: return wgpu::TextureFormat::RGBA8Unorm;
-        default: return wgpu::TextureFormat::Undefined;
+    case TextureFormat::R8Unorm: return wgpu::TextureFormat::R8Unorm;
+    case TextureFormat::R32Float: return wgpu::TextureFormat::R32Float;
+    case TextureFormat::RGBA8Unorm: return wgpu::TextureFormat::RGBA8Unorm;
+    default: return wgpu::TextureFormat::Undefined;
     }
 }
 
-TextureBuffer createImageBufferFromHost(const Image &image,
-                                        Context &context,
-                                        const wgpu::TextureUsage& additionalFlags = {}
-                                        )
+Texture createImageBufferFromHost(const CpuImage &image,
+                                  Context &context,
+                                  const wgpu::TextureUsage& additionalFlags = {}
+                                  )
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
@@ -144,8 +144,8 @@ TextureBuffer createImageBufferFromHost(const Image &image,
                        &dataLayout,
                        &(descriptor.size));
 
-    return TextureBuffer {
-        .texture = gpuTexture,
+    return Texture {
+        .wgpuHandle = gpuTexture,
         .size = descriptor.size
     };
 
@@ -153,16 +153,20 @@ TextureBuffer createImageBufferFromHost(const Image &image,
 
 }
 
-Context createWebGPUContext()
+Context Context::newContext()
 {
     using namespace std::string_literals;
 
     Context context;
-    std::array<const char*, 1> enabledTogglesArray = { "allow_unsafe_apis" };
+    std::array enabledTogglesArray = {
+        "allow_unsafe_apis",
+        // Ensure error callbakcs are invoked immediately
+        "enable_immediate_error_handling"
+    };
 
     wgpu::DawnTogglesDescriptor dawnToggles {};
     dawnToggles.enabledToggles = enabledTogglesArray.data();
-    dawnToggles.enabledToggleCount = 1;
+    dawnToggles.enabledToggleCount = enabledTogglesArray.size();
 
     wgpu::InstanceDescriptor instanceDescriptor {};
     instanceDescriptor.nextInChain = nullptr;
@@ -234,7 +238,7 @@ Context createWebGPUContext()
     return context;
 }
 
-TextureBuffer makeEmptyTextureBuffer(const TextureSpecification &spec, Context &context)
+Texture Context::makeEmptyTexture(const TextureSpecification &spec)
 {
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = wgpu::TextureDimension::e2D;
@@ -245,23 +249,19 @@ TextureBuffer makeEmptyTextureBuffer(const TextureSpecification &spec, Context &
     descriptor.viewFormats = nullptr;
     descriptor.usage = convertUsageToWGPU(spec.usage);
 
-    return TextureBuffer {
-        .texture = context.device.CreateTexture(&descriptor),
+    return Texture {
+        .wgpuHandle = device.CreateTexture(&descriptor),
         .size = descriptor.size
     };
 }
 
-TextureBuffer makeTextureBufferFromHost(const Image &image, Context &context)
+Texture Context::makeTextureFromHost(const CpuImage &image)
 {
-    return createImageBufferFromHost(image, context, {});
+    return createImageBufferFromHost(image, *this, {});
 }
 
-TextureBuffer makeReadOnlyTextureBuffer(const Image &image, Context &context)
-{
-    return createImageBufferFromHost(image, context, wgpu::TextureUsage::CopySrc);
-}
 
-Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
+CpuImage Context::downloadTexture(const Texture &buffer)
 {
     // WebGPU requires that the bytes per row is a multiple of 256
     auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
@@ -274,7 +274,7 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
     wgpu::CommandEncoderDescriptor descriptor {};
     descriptor.label = "Image buffer to host encoder";
 
-    auto encoder = context.device.CreateCommandEncoder(&descriptor);
+    auto encoder = device.CreateCommandEncoder(&descriptor);
 
     wgpu::BufferDescriptor outputBufferDescriptor {
         .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
@@ -282,10 +282,10 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
     };
     outputBufferDescriptor.mappedAtCreation = false;
 
-    auto outputBuffer = context.device.CreateBuffer(&outputBufferDescriptor);
+    auto outputBuffer = device.CreateBuffer(&outputBufferDescriptor);
 
     const wgpu::ImageCopyTexture copyTexture {
-        .texture = buffer.texture
+        .texture = buffer.wgpuHandle
     };
     const wgpu::ImageCopyBuffer copyBuffer {
         .layout = wgpu::TextureDataLayout{
@@ -297,7 +297,7 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
     };
 
     encoder.CopyTextureToBuffer(&copyTexture, &copyBuffer, &buffer.size);
-    auto queue = context.device.GetQueue();
+    auto queue = device.GetQueue();
     auto commands = encoder.Finish();
     queue.Submit(1, &commands);
 
@@ -338,7 +338,7 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
                                               );
 
     // Wait for mapping to finish
-    context.instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
+    instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
 
     // Copy the data to a new vector with the correct width
     std::vector<uint8_t> data;
@@ -349,7 +349,7 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
         data.insert(data.end(), rowStart, rowStart + buffer.size.width * pixelSize);
     }
 
-    Image image;
+    CpuImage image;
     image.width = buffer.size.width;
     image.height = buffer.size.height;
     image.data = std::move(data);
@@ -360,12 +360,24 @@ Image makeHostImageFromBuffer(const TextureBuffer &buffer, Context &context)
     return image;
 }
 
-void applyShaderTransform(const TextureBuffer &src, TextureBuffer &dst, const std::string &shaderCode, Context &context)
+DataBuffer Context::makeEmptyBuffer(size_t size)
 {
+    const wgpu::BufferDescriptor desc {
+        .usage = wgpu::BufferUsage::CopySrc |
+                 wgpu::BufferUsage::CopyDst |
+                 wgpu::BufferUsage::Storage,
+        .size = size,
+        .mappedAtCreation = false
+    };
 
+    return DataBuffer {
+        .wgpuHandle = device.CreateBuffer(&desc),
+        .usage = ResourceUsage::ReadWrite,
+        .size = size
+    };
 }
 
-wgpu::ShaderModule createShaderModule(const std::string &name, const std::string &code, const Context &context)
+wgpu::ShaderModule Context::makeShaderModule(const std::string &name, const std::string &code)
 {
     wgpu::ShaderModuleWGSLDescriptor wgslDescriptor {};
     wgslDescriptor.code = code.c_str();
@@ -373,25 +385,23 @@ wgpu::ShaderModule createShaderModule(const std::string &name, const std::string
     descriptor.nextInChain = &wgslDescriptor;
     descriptor.label = name.c_str();
 
-    return context.device.CreateShaderModule(&descriptor);
+    return device.CreateShaderModule(&descriptor);
 }
 
-ComputeOperation createComputeOperation(ComputeOperationData &data,
-                                        Context &context)
+ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor &operationDescriptor)
 {
     // Create BindGroupLayout with all input and output buffers
     std::vector<wgpu::BindGroupLayoutEntry> layoutEntries;
     std::vector<wgpu::BindGroupEntry> bindGroupEntries;
-    layoutEntries.reserve(data.inputImageBuffers.size() +
-                          data.inputBuffers.size() +
-                          data.outputImageBuffers.size() +
-                          data.outputBuffers.size()
+    layoutEntries.reserve(operationDescriptor.inputTextures.size() +
+                          operationDescriptor.inputBuffers.size() +
+                          operationDescriptor.outputTextures.size() +
+                          operationDescriptor.outputBuffers.size()
                           );
 
     uint8_t bindingIndex = 0;
 
-    // Create layout entries for uniform buffers
-    for(const auto &uniformBufferPtr : data.uniformBuffers) {
+    for(const auto &uniformBufferPtr : operationDescriptor.uniformBuffers) {
         const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -402,14 +412,29 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
 
         const wgpu::BindGroupEntry bindGroupEntry {
             .binding = layoutEntry.binding,
-            .buffer = uniformBufferPtr.buffer
+            .buffer = uniformBufferPtr.wgpuHandle
         };
         layoutEntries.push_back(layoutEntry);
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
+    for(const auto& buffer: operationDescriptor.inputBuffers) {
+        const wgpu::BindGroupLayoutEntry entry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage }
+        };
 
-    for(const auto& imageBuffer : data.inputImageBuffers) {
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = entry.binding,
+            .buffer = buffer.wgpuHandle
+        };
+
+        layoutEntries.push_back(entry);
+        bindGroupEntries.push_back(bindGroupEntry);
+    }
+
+    for(const auto& texture : operationDescriptor.inputTextures) {
         const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -421,49 +446,13 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
 
         const wgpu::BindGroupEntry bindGroupEntry {
             .binding = layoutEntry.binding,
-            .textureView = imageBuffer.texture.CreateView()
+            .textureView = texture.wgpuHandle.CreateView()
         };
         layoutEntries.push_back(layoutEntry);
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto& buffer: data.inputBuffers) {
-        const wgpu::BindGroupLayoutEntry entry {
-            .binding = bindingIndex++,
-            .visibility = wgpu::ShaderStage::Compute,
-            .buffer = wgpu::BufferBindingLayout { .type = wgpu::BufferBindingType::ReadOnlyStorage }
-        };
-
-        const wgpu::BindGroupEntry bindGroupEntry {
-            .binding = entry.binding,
-            .buffer = buffer.buffer
-        };
-
-        layoutEntries.push_back(entry);
-        bindGroupEntries.push_back(bindGroupEntry);
-    }
-
-    for(const auto& imageBuffer: data.outputImageBuffers) {
-        const wgpu::BindGroupLayoutEntry entry {
-            .binding = bindingIndex++,
-            .visibility = wgpu::ShaderStage::Compute,
-            .storageTexture = {
-                .access = wgpu::StorageTextureAccess::WriteOnly,
-                .format = imageBuffer.texture.GetFormat(),
-                .viewDimension = wgpu::TextureViewDimension::e2D
-            }
-        };
-
-        const wgpu::BindGroupEntry bindGroupEntry {
-            .binding = entry.binding,
-            .textureView = imageBuffer.texture.CreateView()
-        };
-
-        layoutEntries.push_back(entry);
-        bindGroupEntries.push_back(bindGroupEntry);
-    }
-
-    for(const auto& buffer: data.outputBuffers) {
+    for(const auto& buffer: operationDescriptor.outputBuffers) {
         const wgpu::BindGroupLayoutEntry entry{
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -472,14 +461,34 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
 
         const wgpu::BindGroupEntry bindGroupEntry {
             .binding = entry.binding,
-            .buffer = buffer.buffer
+            .buffer = buffer.wgpuHandle
         };
 
         layoutEntries.push_back(entry);
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto &sampler : data.samplers) {
+    for(const auto& imageBuffer: operationDescriptor.outputTextures) {
+        const wgpu::BindGroupLayoutEntry entry {
+            .binding = bindingIndex++,
+            .visibility = wgpu::ShaderStage::Compute,
+            .storageTexture = {
+                .access = wgpu::StorageTextureAccess::WriteOnly,
+                .format = imageBuffer.wgpuHandle.GetFormat(),
+                .viewDimension = wgpu::TextureViewDimension::e2D
+            }
+        };
+
+        const wgpu::BindGroupEntry bindGroupEntry {
+            .binding = entry.binding,
+            .textureView = imageBuffer.wgpuHandle.CreateView()
+        };
+
+        layoutEntries.push_back(entry);
+        bindGroupEntries.push_back(bindGroupEntry);
+    }
+
+    for(const auto &sampler : operationDescriptor.samplers) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -495,7 +504,7 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    const auto layoutDescLabel = data.shader.name + " layout descriptor";
+    const auto layoutDescLabel = operationDescriptor.shader.name + " layout descriptor";
     const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor {
         .label = layoutDescLabel.c_str(),
         .entryCount = layoutEntries.size(),
@@ -503,26 +512,26 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
     };
 
 
-    const wgpu::BindGroupLayout bindGroupLayout = context.device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+    const wgpu::BindGroupLayout bindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
 
     // Create compute pipeline
     const wgpu::PipelineLayoutDescriptor pipelineLayoutDescriptor {
         .bindGroupLayoutCount = 1,
         .bindGroupLayouts = &bindGroupLayout
     };
-    const wgpu::PipelineLayout pipelineLayout = context.device.CreatePipelineLayout(&pipelineLayoutDescriptor);
+    const wgpu::PipelineLayout pipelineLayout = device.CreatePipelineLayout(&pipelineLayoutDescriptor);
 
-    const std::string workgroupSizeStr = std::to_string(data.shader.workgroupSize.x) + ", " +
-                                         std::to_string(data.shader.workgroupSize.y) + ", " +
-                                         std::to_string(data.shader.workgroupSize.z);
-    const auto shaderCode = Utils::replacePlaceholder(data.shader.code, "workgroup_size", workgroupSizeStr);
-    const auto computePipelineLabel = data.shader.name + " compute pipeline";
+    const std::string workgroupSizeStr = std::to_string(operationDescriptor.shader.workgroupSize.x) + ", " +
+                                         std::to_string(operationDescriptor.shader.workgroupSize.y) + ", " +
+                                         std::to_string(operationDescriptor.shader.workgroupSize.z);
+    const auto shaderCode = Utils::replacePlaceholder(operationDescriptor.shader.code, "workgroup_size", workgroupSizeStr);
+    const auto computePipelineLabel = operationDescriptor.shader.name + " compute pipeline";
     const wgpu::ComputePipelineDescriptor computePipelineDescriptor {
         .label = computePipelineLabel.c_str(),
         .layout = pipelineLayout,
         .compute = wgpu::ProgrammableStageDescriptor {
-            .module = createShaderModule(data.shader.name, shaderCode, context),
-            .entryPoint = data.shader.entryPoint.c_str()
+            .module = makeShaderModule(operationDescriptor.shader.name, shaderCode),
+            .entryPoint = operationDescriptor.shader.entryPoint.c_str()
         },
     };
 
@@ -539,36 +548,78 @@ ComputeOperation createComputeOperation(ComputeOperationData &data,
     };
 
     return ComputeOperation {
-        .pipeline = context.device.CreateComputePipeline(&computePipelineDescriptor),
-        .bindGroup = context.device.CreateBindGroup(&bindGroupDescriptor)
+        .pipeline = device.CreateComputePipeline(&computePipelineDescriptor),
+        .bindGroup = device.CreateBindGroup(&bindGroupDescriptor)
     };
 }
 
-DataBuffer makeUniformBuffer(const uint8_t *data, size_t size, Context &context)
+DataBuffer Context::makeUniformBuffer(const void *data, size_t size)
 {
-    assert(size % 16 == 0);
     wgpu::BufferDescriptor descriptor;
     descriptor.size = size;
     descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     descriptor.mappedAtCreation = false;
 
-    auto buffer = context.device.CreateBuffer(&descriptor);
-    auto queue = context.device.GetQueue();
+    auto buffer = device.CreateBuffer(&descriptor);
+    auto queue = device.GetQueue();
 
     queue.WriteBuffer(buffer, 0, data, size);
 
     return DataBuffer {
-        .buffer = buffer,
+        .wgpuHandle = buffer,
         .usage = ResourceUsage::ReadWrite,
         .size = size
     };
 }
 
-void dispatchOperation(const ComputeOperation& operation,
-                       WorkgroupGrid workgroupDimensions,
-                       Context& context)
+void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data)
 {
-    wgpu::CommandEncoder encoder = context.device.CreateCommandEncoder();
+    const wgpu::BufferDescriptor outputBufferDesc {
+        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+        .size = dataBuffer.size,
+        .mappedAtCreation = false
+    };
+
+    const auto outputBuffer = device.CreateBuffer(&outputBufferDesc);
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    encoder.CopyBufferToBuffer(dataBuffer.wgpuHandle, 0, outputBuffer, 0, dataBuffer.size);
+    auto commands = encoder.Finish();
+    device.GetQueue().Submit(1, &commands);
+
+    struct Result {
+        bool finished = false;
+        wgpu::Buffer buffer = nullptr;
+        void *data = nullptr;
+    } result = { .buffer = outputBuffer };
+
+    auto callback = [](wgpu::MapAsyncStatus status, const char*) {
+        if(status != wgpu::MapAsyncStatus::Success) {
+            throw std::runtime_error("Failed to download buffer from GPU to CPU!");
+        }
+    };
+    auto waitFuture = outputBuffer.MapAsync(wgpu::MapMode::Read,
+                          0,
+                          outputBufferDesc.size,
+                          wgpu::CallbackMode::WaitAnyOnly,
+                          callback);
+
+    auto status = instance.WaitAny(waitFuture, std::numeric_limits<uint64_t>::max());
+
+    const void* output = outputBuffer.GetConstMappedRange();
+    std::memcpy(data, output, outputBuffer.GetSize());
+    outputBuffer.Unmap();
+}
+
+void Context::writeToBuffer(const DataBuffer &dataBuffer,void *data)
+{
+    device.GetQueue().WriteBuffer(dataBuffer.wgpuHandle, 0, data, dataBuffer.size);
+}
+
+void Context::dispatchOperation(const ComputeOperation& operation,
+                                WorkgroupGrid workgroupDimensions)
+{
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
     pass.SetPipeline(operation.pipeline);
     pass.SetBindGroup(0, operation.bindGroup);
@@ -576,11 +627,11 @@ void dispatchOperation(const ComputeOperation& operation,
     pass.End();
 
     auto commands = encoder.Finish();
-    auto queue = context.device.GetQueue();
+    auto queue = device.GetQueue();
     queue.Submit(1, &commands);
 }
 
-wgpu::Sampler createLinearSampler(const Context &context)
+wgpu::Sampler Context::makeLinearSampler()
 {
     wgpu::SamplerDescriptor descriptor {};
     descriptor.minFilter = wgpu::FilterMode::Linear;
@@ -592,12 +643,31 @@ wgpu::Sampler createLinearSampler(const Context &context)
     descriptor.lodMinClamp = 0.0F;
     descriptor.lodMaxClamp = 0.0F;
 
-    return context.device.CreateSampler(&descriptor);
+    return device.CreateSampler(&descriptor);
 }
 
-void updateUniformBuffer(const DataBuffer &buffer, const uint8_t *data, size_t size, Context &context)
+void Context::updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size)
 {
-    context.device.GetQueue().WriteBuffer(buffer.buffer, 0, data, size);
+    device.GetQueue().WriteBuffer(buffer.wgpuHandle, 0, data, size);
 }
 
+void Context::waitForAllQueueOperations()
+{
+    auto queue = device.GetQueue();
+    queue.Submit(0, nullptr);
+    bool done = false;
+    queue.OnSubmittedWorkDone(wgpu::CallbackMode::AllowProcessEvents, [&done](wgpu::QueueWorkDoneStatus status){
+        done = true;
+        if(status != wgpu::QueueWorkDoneStatus::Success) {
+            throw std::runtime_error("Unexpected queue work done status: "
+                                     + std::to_string(static_cast<int32_t>(status)));
+        }
+    });
+    while(!done) {
+        device.Tick();
+    }
 }
+
+
+}
+
