@@ -1,0 +1,43 @@
+name: Build Test
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_SIZE: "2G"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+          
+      - name: Run sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+      
+      - name: Install dependencies
+        run: |
+          if [ ${{ matrix.os }} == 'ubuntu-latest' ]; then
+            sudo apt update
+            sudo apt install ninja-build libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libgl-dev libx11-xcb-dev
+          elif [ ${{ matrix.os }} == 'macos-latest' ]; then
+            brew install ninja
+          fi
+      - name: Configure
+        run: >
+          cmake 
+          -B build
+          -G Ninja
+      
+      - name: Build
+        run: |
+          cmake --build build
