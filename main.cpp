@@ -146,4 +146,9 @@ int main()
     std::cout << "Minimum angle: " << minAngle << std::endl;
     std::cout << "Minimum tx: " << minTx << std::endl;
     std::cout << "Minimum ty: " << minTy << std::endl;
+
+    // Save the final transformed image
+    auto finalTransformedImage = wgpuContext.downloadTexture(movingTexture);
+    const std::filesystem::path outputPath = "result.pgm";
+    Utils::saveToDisk(finalTransformedImage, outputPath);
 }
