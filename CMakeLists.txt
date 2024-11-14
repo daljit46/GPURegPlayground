@@ -33,6 +33,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
+
+FetchContent_Declare(matplotplusplus
+        GIT_REPOSITORY https://github.com/alandefreitas/matplotplusplus
+        GIT_TAG origin/master) # or whatever tag you want
+FetchContent_MakeAvailable(matplotplusplus)
+
 add_library(stb-image INTERFACE)
 target_include_directories(stb-image INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -44,7 +50,7 @@ target_link_libraries(GPURegLib PUBLIC
     stb-image
 )
 
-target_link_libraries(GPUReg PRIVATE GPURegLib)
+target_link_libraries(GPUReg PRIVATE GPURegLib matplot)
 
 add_custom_command(TARGET GPUReg PRE_BUILD
     COMMAND ${CMAKE_COMMAND} -E create_symlink
