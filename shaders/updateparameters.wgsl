@@ -32,28 +32,25 @@ fn updateParameters(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    let center = dim / 2.0;
-    let offset = vec2<f32>(id.xy) - center;
+    let valueTarget : f32 = textureLoad(targetImage, id.xy, 0).r;
+    let valueMoving : f32 = textureLoad(movingImage, id.xy, 0).r;
+    let error : f32 = (valueTarget - valueMoving);
 
+    let gradientX : f32 = gradientBufferX[id.y * u32(dim.x) + id.x];
+    let gradientY : f32 = gradientBufferY[id.y * u32(dim.x) + id.x];
     let cosTheta = cos(params.angle);
     let sinTheta = sin(params.angle);
 
-    let dIdX = gradientBufferX[id.y * u32(dim.x) + id.x];
-    let dIdY = gradientBufferY[id.y * u32(dim.x) + id.x];
-    let valueTarget : f32 = textureLoad(movingImage, id.xy, 0).r;
-    let valueMoving : f32 = textureLoad(targetImage, id.xy, 0).r;
-    let error : f32 = (valueTarget - valueMoving);
-
-    // x = cos(theta) * x - sin(theta) * y
-    // y = sin(theta) * x + cos(theta) * y
-    let dx_dtheta = -sinTheta * f32(offset.x) - cosTheta * f32(offset.y);
-    let dy_dtheta = cosTheta * f32(offset.x) - sinTheta * f32(offset.y);
-    let dssd_dtheta = -2.0 * error * (dIdX * dx_dtheta + dIdY * dy_dtheta);
-    let dssd_dtx = -2.0 * error * dIdX;
-    let dssd_dty = -2.0 * error * dIdY;
+    let centre = vec2<f32>(dim) / 2.0;
+    let offset = vec2<f32>(id.xy) - centre;
+    let dx_dtheta = -sinTheta * offset.x - cosTheta * offset.y;
+    let dy_dtheta = cosTheta * offset.x - sinTheta * offset.y;
+    let dssd_dtheta = -2.0 * error * (gradientX * dx_dtheta + gradientY * dy_dtheta);
+    let dssd_dtx = -2.0 * error * gradientX;
+    let dssd_dty = -2.0 * error * gradientY;
 
     atomicAdd(&output.dssd_dtheta, i32(dssd_dtheta * scaling_float_to_int));
     atomicAdd(&output.dssd_dtx, i32(dssd_dtx * scaling_float_to_int));
     atomicAdd(&output.dssd_dty, i32(dssd_dty * scaling_float_to_int));
-    atomicAdd(&output.ssd, i32(error * error));
+    atomicAdd(&output.ssd, i32(error * error * scaling_float_to_int));
 }

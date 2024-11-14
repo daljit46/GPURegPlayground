@@ -66,7 +66,7 @@ int main()
     };
 
     // Output parameters are dssd_dtheta, dssd_dtx, dssd_dty, ssd
-    std::array<float, 4> outputParameters = {0.0F, 0.0F, 0.0F, 0.0F};
+    std::array<int32_t, 4> outputParameters = {0, 0, 0, 0};
     auto parametersOutputBuffer = wgpuContext.makeEmptyBuffer(sizeof(float) * outputParameters.size());
     wgpuContext.writeToBuffer(parametersOutputBuffer, outputParameters.data());
 
@@ -103,9 +103,9 @@ int main()
     };
 
     for (int i = 0; i < maxIterations; i++) {
+        wgpuContext.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
         wgpuContext.dispatchOperation(gradientXOp, calcWorkgroupGrid(sourceImage, workgroupSize));
         wgpuContext.dispatchOperation(gradientYOp, calcWorkgroupGrid(sourceImage, workgroupSize));
-        wgpuContext.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
         wgpuContext.dispatchOperation(updateParamsOp, calcWorkgroupGrid(sourceImage, workgroupSize));
 
         wgpuContext.downloadBuffer(parametersOutputBuffer, outputParameters.data());
@@ -114,7 +114,7 @@ int main()
         const float dssd_dtheta = outputParameters[0]/gradientScalingFactor;
         const float dssd_dtx = outputParameters[1]/gradientScalingFactor;
         const float dssd_dty = outputParameters[2]/gradientScalingFactor;
-        const float ssd = outputParameters[3];
+        const float ssd = outputParameters[3]/gradientScalingFactor;
 
         if (ssd < minSSD) {
             minSSD = ssd;
