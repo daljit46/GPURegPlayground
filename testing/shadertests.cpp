@@ -262,3 +262,86 @@ TEST_F(ShaderTest, TransformImage)
 
     EXPECT_LT(meanDifference(cpuOutput, gpuOutputImage.data) / 255.0, 1e-2F);
 }
+
+
+TEST_F(ShaderTest, Reduction)
+{
+    std::vector<int32_t> data(10000);
+    // generate random data
+    std::generate(data.begin(), data.end(), []() { return rand() % 10; });
+
+    const auto inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(int32_t));
+    wgpuContext.writeToBuffer(inputBuffer, data.data());
+
+    const auto outputBuffer = wgpuContext.makeEmptyBuffer(sizeof(int32_t));
+
+    const auto shaderSource = Utils::readFile("shaders/reduction.wgsl");
+
+    const gpu::ComputeOperationDescriptor reductionComputeOpDesc {
+        .shader = {
+            .name = "reduction",
+            .entryPoint = "main",
+            .code = shaderSource,
+            .workgroupSize = { 256, 1, 1 }
+        },
+        .inputBuffers = { inputBuffer },
+        .outputBuffers = { outputBuffer }
+    };
+
+    auto reductionComputeOp = wgpuContext.makeComputeOperation(reductionComputeOpDesc);
+    wgpuContext.dispatchOperation(reductionComputeOp, { static_cast<uint32_t>(data.size() + 255 / 256), 1, 1 });
+
+    int32_t gpuResult;
+    wgpuContext.downloadBuffer(outputBuffer, &gpuResult);
+
+    // Compute the reduction on the CPU for comparison
+    int32_t cpuResult = 0;
+    for (size_t i = 0; i < data.size(); i++) {
+        cpuResult += data[i];
+    }
+
+    EXPECT_EQ(cpuResult, gpuResult);
+}
+
+
+TEST_F(ShaderTest, ReductionFloat)
+{
+    std::vector<float> data(9999);
+    // generate random data
+    std::generate(data.begin(), data.end(), []() { return static_cast<float>((rand() % 100)/10.0); });
+
+    const auto inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(float));
+    wgpuContext.writeToBuffer(inputBuffer, data.data());
+
+    const auto outputBuffer = wgpuContext.makeEmptyBuffer(sizeof(uint32_t));
+
+    const auto shaderSource = Utils::readFile("shaders/reduction_f32.wgsl");
+
+    const gpu::ComputeOperationDescriptor reductionComputeOpDesc {
+        .shader = {
+            .name = "reduction_float",
+            .entryPoint = "main",
+            .code = shaderSource,
+            .workgroupSize = { 256, 1, 1 }
+        },
+        .inputBuffers = { inputBuffer },
+        .outputBuffers = { outputBuffer }
+    };
+
+    auto reductionComputeOp = wgpuContext.makeComputeOperation(reductionComputeOpDesc);
+    wgpuContext.dispatchOperation(reductionComputeOp, { static_cast<uint32_t>(data.size() + 255 / 256), 1, 1 });
+
+    float gpuResult;
+    wgpuContext.downloadBuffer(outputBuffer, &gpuResult);
+
+    // Compute the reduction on the CPU in double precision for comparison
+    double cpuResult = 0;
+    for (size_t i = 0; i < data.size(); i++) {
+        cpuResult += static_cast<double>(data[i]);
+    }
+
+    // print the results
+    std::cout << "CPU result: " << cpuResult << std::endl;
+    std::cout << "GPU result: " << gpuResult << std::endl;
+    EXPECT_NEAR(cpuResult, gpuResult, 1e-1);
+}

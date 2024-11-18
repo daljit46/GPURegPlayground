@@ -61,6 +61,8 @@ add_custom_command(TARGET GPUReg PRE_BUILD
 add_custom_target(shaders SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gradientx.wgsl
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gradienty.wgsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/reduction.wgsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/reduction_f32.wgsl
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transformimage.wgsl
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/updateparameters.wgsl
 )
