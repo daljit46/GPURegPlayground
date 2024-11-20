@@ -2,6 +2,25 @@
 #include "image.h"
 #include "utils.h"
 #include <iostream>
+#include <chrono>
+
+
+class ScopedTimer {
+public:
+    explicit ScopedTimer(const std::string& name) : name(name) {
+        start = std::chrono::high_resolution_clock::now();
+    }
+
+    ~ScopedTimer() {
+        const auto end = std::chrono::high_resolution_clock::now();
+        const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        std::cout << name << ": " << duration << "ms" << std::endl;
+    }
+
+private:
+    std::string name;
+    std::chrono::time_point<std::chrono::high_resolution_clock> start;
+};
 
 int main()
 {
