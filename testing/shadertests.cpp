@@ -244,8 +244,8 @@ TEST_F(ShaderTest, TransformImage)
         for (size_t x = 0; x < cpuImage.width; x++) {
             const float offsetX = x - centerX;
             const float offsetY = y - centerY;
-            const float transformedX = offsetX * cosTheta - offsetY * sinTheta + centerX + uniformParams.tx;
-            const float transformedY = offsetX * sinTheta + offsetY * cosTheta + centerY + uniformParams.ty;
+            const float transformedX = x * cosTheta - y * sinTheta + uniformParams.tx;
+            const float transformedY = x * sinTheta + y * cosTheta + uniformParams.ty;
 
             const auto value = getBilinearInterpolatedPixel(transformedX, transformedY, cpuImage);
             const auto index = y * cpuImage.width + x;

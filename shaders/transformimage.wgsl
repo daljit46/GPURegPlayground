@@ -22,9 +22,6 @@ fn computeTransform(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    let center : vec2<f32> = vec2<f32>(dim.xy / 2.0);
-    let offset : vec2<f32> = coords - center;
-
     let cosTheta = cos(params.angle);
     let sinTheta = sin(params.angle);
 
@@ -34,7 +31,7 @@ fn computeTransform(@builtin(global_invocation_id) id: vec3<u32>) {
         -sinTheta, cosTheta
     );
 
-    let transformed = mat * offset + vec2<f32>(params.tx, params.ty) + center;
+    let transformed = mat * coords + vec2<f32>(params.tx, params.ty);
 
     let color = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0);
     textureStore(outputTexture, id.xy, vec4<f32>(color.r, 1.0, 0.0, 1.0));
