@@ -340,8 +340,61 @@ TEST_F(ShaderTest, ReductionFloat)
         cpuResult += static_cast<double>(data[i]);
     }
 
-    // print the results
-    std::cout << "CPU result: " << cpuResult << std::endl;
-    std::cout << "GPU result: " << gpuResult << std::endl;
     EXPECT_NEAR(cpuResult, gpuResult, 1e-1);
+}
+
+TEST_F(ShaderTest, Downsample)
+{
+    auto brainImage = Utils::loadFromDisk("data/brain.pgm");
+
+    const auto inputTexture = wgpuContext.makeTextureFromHost(brainImage);
+    const auto outputTexture = wgpuContext.makeEmptyTexture({
+        .width = brainImage.width / 2,
+        .height = brainImage.height / 2,
+        .format = gpu::TextureFormat::R8Unorm,
+        .usage = gpu::ResourceUsage::ReadWrite
+    });
+
+    const auto shaderSource = Utils::readFile("shaders/downsample.wgsl");
+    const gpu::ComputeOperationDescriptor downsampleOpDesc {
+        .shader = {
+            .name = "downsampling",
+            .entryPoint = "main",
+            .code = shaderSource,
+            .workgroupSize = { 16, 16, 1 }
+        },
+        .inputTextures = { inputTexture },
+        .outputTextures = { outputTexture }
+    };
+
+    auto downsampleOp = wgpuContext.makeComputeOperation(downsampleOpDesc);
+    wgpuContext.dispatchOperation(downsampleOp, { brainImage.width + 31 / 32, brainImage.height + 31 / 32, 1 });
+
+    // Perform the downsampling on the CPU for comparison
+    std::vector<uint8_t> cpuOutput(brainImage.width / 2 * brainImage.height / 2);
+    for(size_t y = 0; y < brainImage.height / 2; ++y) {
+        for(size_t x = 0; x < brainImage.width / 2; ++x) {
+            uint8_t p00 = getPixel(x * 2, y * 2, brainImage);
+            uint8_t p01 = getPixel(x * 2 + 1, y * 2, brainImage);
+            uint8_t p10 = getPixel(x * 2, y * 2 + 1, brainImage);
+            uint8_t p11 = getPixel(x * 2 + 1, y * 2 + 1, brainImage);
+
+            cpuOutput[y * (brainImage.width / 2) + x] =
+                static_cast<uint8_t>((static_cast<double>(p00) + p01 + p10 + p11) / 4.0);
+        }
+    }
+
+    auto gpuOutput = wgpuContext.downloadTexture(outputTexture);
+
+    // Save the output to disk for visual inspection
+    CpuImage cpuOutputImage = {
+        .width = brainImage.width / 2,
+        .height = brainImage.height / 2,
+        .data = cpuOutput
+    };
+
+    Utils::saveToDisk(cpuOutputImage, "output_cpu.pgm");
+    Utils::saveToDisk(gpuOutput, "output_gpu.pgm");
+
+    EXPECT_LT(meanDifference(cpuOutput, gpuOutput.data) / 255.0, 5e-3F);
 }
