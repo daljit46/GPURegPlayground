@@ -22,6 +22,74 @@ private:
     std::chrono::time_point<std::chrono::high_resolution_clock> start;
 };
 
+
+
+namespace CpuEngine {
+double ssd(const CpuImage& source, const CpuImage& target) {
+    assert(source.width == target.width && source.height == target.height);
+
+    double sum = 0.0F;
+    for (int i = 0; i < source.width * source.height; i++) {
+        const double diff = (static_cast<double>(source.data[i]) - static_cast<double>(target.data[i]))/255.0;
+        sum += diff * diff;
+    }
+
+    return sum;
+}
+
+CpuImage transform(const CpuImage& image, float angle, float tx, float ty) {
+    CpuImage result {
+        .width = image.width,
+        .height = image.height,
+    };
+
+    result.data.resize(image.width * image.height);
+    auto getPixel = [&image](int x, int y) -> uint8_t {
+        if (x < 0 || x >= image.width || y < 0 || y >= image.height) {
+            return 0.0F;
+        }
+
+        const auto index = y * image.width + x;
+        return image.data[index];
+    };
+
+    auto setPixel = [&result](int x, int y, uint8_t value) {
+        const auto index = y * result.width + x;
+        result.data[index] = value;
+    };
+
+    for (int y = 0; y < image.height; y++) {
+        for (int x = 0; x < image.width; x++) {
+            const float xNew = x * std::cos(angle) - y * std::sin(angle) + tx;
+            const float yNew = x * std::sin(angle) + y * std::cos(angle) + ty;
+
+            // Bilinear interpolation
+            const int x0 = std::floor(xNew);
+            const int y0 = std::floor(yNew);
+            const int x1 = x0 + 1;
+            const int y1 = y0 + 1;
+
+            const float dx = xNew - x0;
+            const float dy = yNew - y0;
+
+            const float p00 = getPixel(x0, y0);
+            const float p01 = getPixel(x0, y1);
+            const float p10 = getPixel(x1, y0);
+            const float p11 = getPixel(x1, y1);
+
+            const float p0 = p00 * (1.0F - dx) + p10 * dx;
+            const float p1 = p01 * (1.0F - dx) + p11 * dx;
+            const float p = p0 * (1.0F - dy) + p1 * dy;
+
+            setPixel(x, y, p);
+        }
+    }
+
+    return result;
+}
+
+}
+
 int main()
 {
     auto wgpuContext = gpu::Context::newContext();
