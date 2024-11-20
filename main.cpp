@@ -66,8 +66,8 @@ int main()
     };
 
     // Output parameters are dssd_dtheta, dssd_dtx, dssd_dty, ssd
-    std::array<int32_t, 4> outputParameters = {0, 0, 0, 0};
-    auto parametersOutputBuffer = wgpuContext.makeEmptyBuffer(sizeof(float) * outputParameters.size());
+    std::array<uint32_t, 4> outputParameters = {0, 0, 0, 0};
+    auto parametersOutputBuffer = wgpuContext.makeEmptyBuffer(sizeof(uint32_t) * outputParameters.size());
     wgpuContext.writeToBuffer(parametersOutputBuffer, outputParameters.data());
 
     const gpu::ComputeOperationDescriptor updateParamsDesc {
@@ -110,11 +110,10 @@ int main()
 
         wgpuContext.downloadBuffer(parametersOutputBuffer, outputParameters.data());
 
-        constexpr auto gradientScalingFactor = 1000.0F;
-        const float dssd_dtheta = outputParameters[0]/gradientScalingFactor;
-        const float dssd_dtx = outputParameters[1]/gradientScalingFactor;
-        const float dssd_dty = outputParameters[2]/gradientScalingFactor;
-        const float ssd = outputParameters[3]/gradientScalingFactor;
+        const float dssd_dtheta = reinterpret_cast<float*>(outputParameters.data())[0];
+        const float dssd_dtx = reinterpret_cast<float*>(outputParameters.data())[1];
+        const float dssd_dty = reinterpret_cast<float*>(outputParameters.data())[2];
+        const float ssd = reinterpret_cast<float*>(outputParameters.data())[3];
 
         if (ssd < minSSD) {
             minSSD = ssd;
