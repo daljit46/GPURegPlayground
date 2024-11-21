@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <optional>
 #include <webgpu/webgpu_cpp.h>
 
 #include <cstdint>
@@ -114,6 +113,9 @@ struct Context {
     using CompletionHandler = std::function<void()>;
     // Completion handler must be alive until the operation is completed
     void waitForAllQueueOperations();
+
+private:
+    DataBuffer m_defaultMappingBuffer;
 };
 
 }

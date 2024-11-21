@@ -15,6 +15,9 @@
 #include <iostream>
 #include <stdexcept>
 
+constexpr uint32_t defaultMappingBufferSize = 1024;
+
+
 namespace gpu {
 
 namespace {
@@ -235,6 +238,18 @@ Context Context::newContext()
 
     context.device.SetUncapturedErrorCallback(onDeviceError, nullptr);
     context.device.SetDeviceLostCallback(onDeviceLost, nullptr);
+
+    constexpr wgpu::BufferDescriptor defaultMappingBufferDesc {
+        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+        .size = defaultMappingBufferSize,
+        .mappedAtCreation = false
+    };
+
+    context.m_defaultMappingBuffer = DataBuffer {
+        .wgpuHandle = context.device.CreateBuffer(&defaultMappingBufferDesc),
+        .usage = ResourceUsage::ReadOnly,
+        .size = defaultMappingBufferSize
+    };
 
     printAdapterInfo(context.adapter);
 
@@ -588,24 +603,23 @@ DataBuffer Context::makeUniformBuffer(const void *data, size_t size)
 
 void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data)
 {
-    const wgpu::BufferDescriptor outputBufferDesc {
-        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
-        .size = dataBuffer.size,
-        .mappedAtCreation = false
-    };
-
-    const auto outputBuffer = device.CreateBuffer(&outputBufferDesc);
+    wgpu::Buffer outputBuffer;
+    if(dataBuffer.size > defaultMappingBufferSize) {
+        const wgpu::BufferDescriptor outputBufferDesc {
+            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+            .size = dataBuffer.size,
+            .mappedAtCreation = false
+        };
+        outputBuffer = device.CreateBuffer(&outputBufferDesc);
+    }
+    else {
+        outputBuffer = m_defaultMappingBuffer.wgpuHandle;
+    }
 
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     encoder.CopyBufferToBuffer(dataBuffer.wgpuHandle, 0, outputBuffer, 0, dataBuffer.size);
     auto commands = encoder.Finish();
     device.GetQueue().Submit(1, &commands);
-
-    struct Result {
-        bool finished = false;
-        wgpu::Buffer buffer = nullptr;
-        void *data = nullptr;
-    } result = { .buffer = outputBuffer };
 
     auto callback = [](wgpu::MapAsyncStatus status, const char*) {
         if(status != wgpu::MapAsyncStatus::Success) {
@@ -614,7 +628,7 @@ void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data)
     };
     auto waitFuture = outputBuffer.MapAsync(wgpu::MapMode::Read,
                           0,
-                          outputBufferDesc.size,
+                          outputBuffer.GetSize(),
                           wgpu::CallbackMode::WaitAnyOnly,
                           callback);
 
@@ -634,13 +648,18 @@ void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& 
         totalSize += buffer->size;
     }
 
-    const wgpu::BufferDescriptor outputBufferDesc {
-        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
-        .size = totalSize,
-        .mappedAtCreation = false
-    };
-
-    const auto outputBuffer = device.CreateBuffer(&outputBufferDesc);
+    wgpu::Buffer outputBuffer;
+    if(totalSize > defaultMappingBufferSize) {
+        const wgpu::BufferDescriptor outputBufferDesc {
+            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+            .size = totalSize,
+            .mappedAtCreation = false
+        };
+        outputBuffer = device.CreateBuffer(&outputBufferDesc);
+    }
+    else {
+        outputBuffer = m_defaultMappingBuffer.wgpuHandle;
+    }
 
     size_t offset = 0;
     for(const auto &[buffer, _] : bufferMappingPairs) {
@@ -651,12 +670,6 @@ void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& 
     auto commands = encoder.Finish();
     device.GetQueue().Submit(1, &commands);
 
-    struct Result {
-        bool finished = false;
-        wgpu::Buffer buffer = nullptr;
-        void *data = nullptr;
-    } result = { .buffer = outputBuffer };
-
     auto callback = [](wgpu::MapAsyncStatus status, const char*) {
         if(status != wgpu::MapAsyncStatus::Success) {
             throw std::runtime_error("Failed to download buffer from GPU to CPU!");
@@ -664,7 +677,7 @@ void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& 
     };
     auto waitFuture = outputBuffer.MapAsync(wgpu::MapMode::Read,
                                             0,
-                                            outputBufferDesc.size,
+                                            outputBuffer.GetSize(),
                                             wgpu::CallbackMode::WaitAnyOnly,
                                             callback);
 
