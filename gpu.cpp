@@ -625,6 +625,62 @@ void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data)
     outputBuffer.Unmap();
 }
 
+void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs)
+{
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    // We create an output buffer that is large enough to hold all the buffers
+    size_t totalSize = 0;
+    for(const auto &[buffer, _] : bufferMappingPairs) {
+        totalSize += buffer->size;
+    }
+
+    const wgpu::BufferDescriptor outputBufferDesc {
+        .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
+        .size = totalSize,
+        .mappedAtCreation = false
+    };
+
+    const auto outputBuffer = device.CreateBuffer(&outputBufferDesc);
+
+    size_t offset = 0;
+    for(const auto &[buffer, _] : bufferMappingPairs) {
+        encoder.CopyBufferToBuffer(buffer->wgpuHandle, 0, outputBuffer, offset, buffer->size);
+        offset += buffer->size;
+    }
+
+    auto commands = encoder.Finish();
+    device.GetQueue().Submit(1, &commands);
+
+    struct Result {
+        bool finished = false;
+        wgpu::Buffer buffer = nullptr;
+        void *data = nullptr;
+    } result = { .buffer = outputBuffer };
+
+    auto callback = [](wgpu::MapAsyncStatus status, const char*) {
+        if(status != wgpu::MapAsyncStatus::Success) {
+            throw std::runtime_error("Failed to download buffer from GPU to CPU!");
+        }
+    };
+    auto waitFuture = outputBuffer.MapAsync(wgpu::MapMode::Read,
+                                            0,
+                                            outputBufferDesc.size,
+                                            wgpu::CallbackMode::WaitAnyOnly,
+                                            callback);
+
+    auto status = instance.WaitAny(waitFuture, std::numeric_limits<uint64_t>::max());
+
+    const void* output = outputBuffer.GetConstMappedRange();
+
+    offset = 0;
+    for(size_t i = 0; i < bufferMappingPairs.size(); ++i) {
+        const auto &[buffer, data] = bufferMappingPairs[i];
+        std::memcpy(data, static_cast<const uint8_t*>(output) + offset, buffer->size);
+        offset += buffer->size;
+    }
+    outputBuffer.Unmap();
+}
+
 void Context::writeToBuffer(const DataBuffer &dataBuffer,void *data)
 {
     device.GetQueue().WriteBuffer(dataBuffer.wgpuHandle, 0, data, dataBuffer.size);

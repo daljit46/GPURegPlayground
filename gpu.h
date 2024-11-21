@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <webgpu/webgpu_cpp.h>
 
 #include <cstdint>
@@ -99,6 +100,7 @@ struct Context {
     DataBuffer makeEmptyBuffer(size_t size);
     DataBuffer makeUniformBuffer(const void* data, size_t size);
     void downloadBuffer(const DataBuffer& dataBuffer, void *data);
+    void downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs);
     void writeToBuffer(const DataBuffer& dataBuffer, void* data);
 
     wgpu::ShaderModule makeShaderModule(const std::string& name, const std::string& code);

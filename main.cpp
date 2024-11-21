@@ -221,18 +221,28 @@ int main()
         struct TimeStamp {
             uint64_t start = 0;
             uint64_t end = 0;
-        } t;
-        wgpuContext.downloadBuffer(updateParamsOp.timestampResolveBuffer, &t);
-        updateParamsDurationHistory.push_back((t.end - t.start) / 1e6);
-        wgpuContext.downloadBuffer(transformOp.timestampResolveBuffer, &t);
-        transformationDurationHistory.push_back((t.end - t.start) / 1e6);
-        wgpuContext.downloadBuffer(gradientXOp.timestampResolveBuffer, &t);
-        gradientXDurationHistory.push_back((t.end - t.start) / 1e6);
-        wgpuContext.downloadBuffer(gradientYOp.timestampResolveBuffer, &t);
-        gradientYDurationHistory.push_back((t.end - t.start) / 1e6);
+        };
 
+        TimeStamp updateParamsDuration;
+        TimeStamp transformationDuration;
+        TimeStamp gradientXDuration;
+        TimeStamp gradientYDuration;
 
-        wgpuContext.downloadBuffer(parametersOutputBuffer, outputParameters.data());
+        const std::vector<std::pair<gpu::DataBuffer*, void*>> bufferMappingPairs = {
+            { &parametersOutputBuffer, outputParameters.data()},
+            { &updateParamsOp.timestampResolveBuffer, &updateParamsDuration},
+            { &transformOp.timestampResolveBuffer, &transformationDuration},
+            { &gradientXOp.timestampResolveBuffer, &gradientXDuration},
+            { &gradientYOp.timestampResolveBuffer, &gradientYDuration}
+        };
+
+        wgpuContext.downloadBuffers(bufferMappingPairs);
+
+        updateParamsDurationHistory.push_back((updateParamsDuration.end - updateParamsDuration.start) / 1e6);
+        transformationDurationHistory.push_back((transformationDuration.end - transformationDuration.start) / 1e6);
+        gradientXDurationHistory.push_back((gradientXDuration.end - gradientXDuration.start) / 1e6);
+        gradientYDurationHistory.push_back((gradientYDuration.end - gradientYDuration.start) / 1e6);
+
 
         // Data on the GPU is output as u32 because WebGPU does not support f32 atomics
         // So we need to bitcast the data to float
