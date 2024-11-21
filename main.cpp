@@ -1,9 +1,9 @@
 #include "gpu.h"
 #include "image.h"
 #include "utils.h"
-#include <iostream>
 #include <chrono>
-
+#include <matplot/matplot.h>
+#include <spdlog/spdlog.h>
 
 class ScopedTimer {
 public:
@@ -14,7 +14,7 @@ public:
     ~ScopedTimer() {
         const auto end = std::chrono::high_resolution_clock::now();
         const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        std::cout << name << ": " << duration << "ms" << std::endl;
+        spdlog::info("{}: {}ms", name, duration);
     }
 
 private:
@@ -92,9 +92,10 @@ CpuImage transform(const CpuImage& image, float angle, float tx, float ty) {
 
 int main()
 {
+    spdlog::set_pattern("%^[%T] [%n:] %v%$");
     auto wgpuContext = gpu::Context::newContext();
     const CpuImage sourceImage = Utils::loadFromDisk("data/brain.pgm");
-    const CpuImage targetImage = Utils::loadFromDisk("data/brain_translated.pgm");
+    const CpuImage targetImage = CpuEngine::transform(sourceImage, 0.1, 100, 100);
 
     auto sourceTexture = wgpuContext.makeTextureFromHost(sourceImage);
     auto targetTexture = wgpuContext.makeTextureFromHost(targetImage);
@@ -175,10 +176,17 @@ int main()
     auto transformOp = wgpuContext.makeComputeOperation(transformDesc);
     auto updateParamsOp = wgpuContext.makeComputeOperation(updateParamsDesc);
 
-    constexpr int maxIterations = 5;
-    const auto angleLearningRate = 1e-6;
-    const auto txLearningRate = 1e-4;
-    const auto tyLearningRate = 1e-4;
+    constexpr int maxIterations = 1000;
+    const float txLearningRate = 5;
+    const float tyLearningRate = 5;
+    const float angleLearningRate = txLearningRate / 100;
+
+
+    float epsilon = 1e-9;
+    float decayRate = 0.9;
+    double angleAccumulator = 0.0;
+    double txAccumulator = 0.0;
+    double tyAccumulator = 0.0;
 
     float minSSD = std::numeric_limits<float>::max();
     float minAngle = std::numeric_limits<float>::max();
@@ -189,6 +197,10 @@ int main()
         return gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1};
     };
 
+    auto originalSSD = CpuEngine::ssd(sourceImage, targetImage);
+
+    std::vector<float> ssdHistory;
+
     for (int i = 0; i < maxIterations; i++) {
         wgpuContext.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
         wgpuContext.dispatchOperation(gradientXOp, calcWorkgroupGrid(sourceImage, workgroupSize));
@@ -197,6 +209,8 @@ int main()
 
         wgpuContext.downloadBuffer(parametersOutputBuffer, outputParameters.data());
 
+        // Data on the GPU is output as u32 because WebGPU does not support f32 atomics
+        // So we need to bitcast the data to float
         const float dssd_dtheta = reinterpret_cast<float*>(outputParameters.data())[0];
         const float dssd_dtx = reinterpret_cast<float*>(outputParameters.data())[1];
         const float dssd_dty = reinterpret_cast<float*>(outputParameters.data())[2];
@@ -209,9 +223,14 @@ int main()
             minTy = outputParameters[2];
         }
 
-        // transformationParams.angle -= angleLearningRate * dssd_dtheta;
-        transformationParams.translationX -= txLearningRate * dssd_dtx;
-        transformationParams.translationY -= tyLearningRate * dssd_dty;
+        // Update parameters using AdaGrad
+        angleAccumulator += dssd_dtheta * dssd_dtheta;
+        txAccumulator += dssd_dtx * dssd_dtx;
+        tyAccumulator += dssd_dty * dssd_dty;
+
+        transformationParams.angle -= angleLearningRate * dssd_dtheta / std::sqrt(angleAccumulator + epsilon);
+        transformationParams.translationX -= txLearningRate * dssd_dtx / std::sqrt(txAccumulator + epsilon);
+        transformationParams.translationY -= tyLearningRate * dssd_dty / std::sqrt(tyAccumulator + epsilon);
 
         wgpuContext.writeToBuffer(paramsUniformBuffer, &transformationParams);
 
@@ -219,19 +238,41 @@ int main()
         std::fill(outputParameters.begin(), outputParameters.end(), 0.0F);
         wgpuContext.writeToBuffer(parametersOutputBuffer, outputParameters.data());
 
-        std::cout << "Iteration " << i << " SSD: " << ssd << std::endl;
-        std::cout << "Angle: " << transformationParams.angle << std::endl;
-        std::cout << "Tx: " << transformationParams.translationX << std::endl;
-        std::cout << "Ty: " << transformationParams.translationY << std::endl;
-        std::cout << "dssd_dtheta: " << dssd_dtheta << std::endl;
-        std::cout << "dssd_dtx: " << dssd_dtx << std::endl;
-        std::cout << "dssd_dty: " << dssd_dty << std::endl;
+        spdlog::info("Iteration {} SSD: {}", i, ssd);
+        spdlog::info("Angle: {}", transformationParams.angle);
+        spdlog::info("Tx: {}", transformationParams.translationX);
+        spdlog::info("Ty: {}", transformationParams.translationY);
+        spdlog::info("dssd_dtheta: {}", dssd_dtheta);
+        spdlog::info("dssd_dtx: {}", dssd_dtx);
+        spdlog::info("dssd_dty: {}", dssd_dty);
+
+        ssdHistory.push_back(ssd);
+
+        if (i > 50) {
+            auto averageSSD = std::accumulate(ssdHistory.begin() + i - 50, ssdHistory.begin() + i, 0.0F) / 50;
+            if (std::abs(ssd - averageSSD) < 1e-2) {
+                spdlog::info("No improvement in last 50 iterations. Stopping.");
+                break;
+            }
+        }
+
+        if(ssd < originalSSD * 1e-4) {
+            spdlog::info("Converged");
+            break;
+        }
+        spdlog::info("------------------------------------------------- \n");
     }
 
-    std::cout << "Minimum SSD: " << minSSD << std::endl;
-    std::cout << "Minimum angle: " << minAngle << std::endl;
-    std::cout << "Minimum tx: " << minTx << std::endl;
-    std::cout << "Minimum ty: " << minTy << std::endl;
+    matplot::plot(ssdHistory);
+    matplot::title("SSD History");
+    matplot::xlabel("Iterations");
+    matplot::ylabel("SSD");
+    matplot::show();
+
+    spdlog::info("Minimum SSD: {}", minSSD);
+    spdlog::info("Minimum angle: {}", minAngle);
+    spdlog::info("Minimum tx: {}", minTx);
+    spdlog::info("Minimum ty: {}", minTy);
 
     // Save the final transformed image
     auto finalTransformedImage = wgpuContext.downloadTexture(movingTexture);

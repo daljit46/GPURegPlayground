@@ -39,15 +39,24 @@ FetchContent_Declare(matplotplusplus
         GIT_TAG origin/master) # or whatever tag you want
 FetchContent_MakeAvailable(matplotplusplus)
 
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY "https://github.com/gabime/spdlog.git"
+  GIT_TAG 8e5613379f5140fefb0b60412fbf1f5406e7c7f8 # v1.15.0
+)
+FetchContent_MakeAvailable(spdlog)
+
 add_library(stb-image INTERFACE)
 target_include_directories(stb-image INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/stb
 )
 
+
 target_link_libraries(GPURegLib PUBLIC
     webgpu_dawn
     stb-image
+    spdlog::spdlog
 )
 
 target_link_libraries(GPUReg PRIVATE GPURegLib matplot)
