@@ -285,10 +285,10 @@ int main()
 
         ssdHistory.push_back(ssd);
 
-        if (i > 50) {
-            auto averageSSD = std::accumulate(ssdHistory.begin() + i - 50, ssdHistory.begin() + i, 0.0F) / 50;
-            if (std::abs(ssd - averageSSD) < 1e-2) {
-                spdlog::info("No improvement in last 50 iterations. Stopping.");
+        if (i > 20) {
+            auto averageSSD = std::accumulate(ssdHistory.begin() + i - 20, ssdHistory.begin() + i, 0.0F) / 20;
+            if (std::abs(ssd - averageSSD) < 1e-3) {
+                spdlog::info("No improvement in last 20 iterations. Stopping.");
                 break;
             }
         }
