@@ -2,8 +2,10 @@
 #include "image.h"
 #include "utils.h"
 #include <chrono>
+#include <cmath>
 #include <matplot/matplot.h>
 #include <spdlog/spdlog.h>
+#include <string>
 #include <vector>
 
 template<typename T>
