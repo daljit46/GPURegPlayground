@@ -255,9 +255,9 @@ int main()
 
         if (ssd < minSSD) {
             minSSD = ssd;
-            minAngle = outputParameters[0];
-            minTx = outputParameters[1];
-            minTy = outputParameters[2];
+            minAngle = transformationParams.angle;
+            minTx = transformationParams.translationX;
+            minTy = transformationParams.translationY;
         }
 
         // Update parameters using AdaGrad
