@@ -66,8 +66,10 @@ struct ShaderEntry {
 };
 
 struct ComputeOperation {
+    std::string name;
     wgpu::ComputePipeline pipeline;
     wgpu::BindGroup bindGroup;
+    DataBuffer timestampResolveBuffer;
 };
 
 struct ComputeOperationDescriptor {

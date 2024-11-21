@@ -2,6 +2,7 @@
 #include "image.h"
 #include "utils.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -205,7 +206,8 @@ Context Context::newContext()
     context.instance.RequestAdapter(&adapterOptions, adapterCallback, &adapterResult);
     context.adapter = adapterResult.adapter;
     std::vector<wgpu::FeatureName> requiredFeatures = {
-        wgpu::FeatureName::R8UnormStorage
+        wgpu::FeatureName::R8UnormStorage,
+        wgpu::FeatureName::TimestampQuery
     };
     wgpu::DeviceDescriptor deviceDescriptor {};
     deviceDescriptor.nextInChain = &dawnToggles;
@@ -542,6 +544,12 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         };
     }
 
+    const wgpu::BufferDescriptor resolveBufferDesc {
+        .usage = wgpu::BufferUsage::QueryResolve | wgpu::BufferUsage::CopySrc,
+        .size = 2 * sizeof(uint64_t)
+    };
+    const wgpu::Buffer resolveBuffer = device.CreateBuffer(&resolveBufferDesc);
+
     const wgpu::BindGroupDescriptor bindGroupDescriptor{
         .layout = bindGroupLayout,
         .entryCount = bindGroupEntries.size(),
@@ -550,7 +558,12 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
 
     return ComputeOperation {
         .pipeline = device.CreateComputePipeline(&computePipelineDescriptor),
-        .bindGroup = device.CreateBindGroup(&bindGroupDescriptor)
+        .bindGroup = device.CreateBindGroup(&bindGroupDescriptor),
+        .timestampResolveBuffer = DataBuffer {
+            .wgpuHandle = resolveBuffer,
+            .usage = ResourceUsage::ReadWrite,
+            .size = resolveBufferDesc.size
+        }
     };
 }
 
@@ -620,13 +633,29 @@ void Context::writeToBuffer(const DataBuffer &dataBuffer,void *data)
 void Context::dispatchOperation(const ComputeOperation& operation,
                                 WorkgroupGrid workgroupDimensions)
 {
+    const wgpu::QuerySetDescriptor querySetDesc {
+        .type = wgpu::QueryType::Timestamp,
+        .count = 2
+    };
+    const wgpu::QuerySet querySet = device.CreateQuerySet(&querySetDesc);
+    const wgpu::ComputePassTimestampWrites timestampWrites {
+        .querySet = querySet,
+        .beginningOfPassWriteIndex = 0,
+        .endOfPassWriteIndex = 1
+    };
+    const wgpu::ComputePassDescriptor passDescriptor {
+        .label = operation.name.c_str(),
+        .timestampWrites = &timestampWrites,
+    };
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-    wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
+    wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&passDescriptor);
     pass.SetPipeline(operation.pipeline);
     pass.SetBindGroup(0, operation.bindGroup);
     pass.DispatchWorkgroups(workgroupDimensions.x, workgroupDimensions.y, workgroupDimensions.z);
     pass.End();
 
+
+    encoder.ResolveQuerySet(querySet, 0, 2, operation.timestampResolveBuffer.wgpuHandle, 0);
     auto commands = encoder.Finish();
     auto queue = device.GetQueue();
     queue.Submit(1, &commands);

@@ -4,6 +4,12 @@
 #include <chrono>
 #include <matplot/matplot.h>
 #include <spdlog/spdlog.h>
+#include <vector>
+
+template<typename T>
+T sumVector(const std::vector<T>& vec) {
+    return std::accumulate(vec.begin(), vec.end(), 0.0F);
+}
 
 class ScopedTimer {
 public:
@@ -200,12 +206,31 @@ int main()
     auto originalSSD = CpuEngine::ssd(sourceImage, targetImage);
 
     std::vector<float> ssdHistory;
+    std::vector<float> transformationDurationHistory;
+    std::vector<float> gradientXDurationHistory;
+    std::vector<float> gradientYDurationHistory;
+    std::vector<float> updateParamsDurationHistory;
 
     for (int i = 0; i < maxIterations; i++) {
         wgpuContext.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
         wgpuContext.dispatchOperation(gradientXOp, calcWorkgroupGrid(sourceImage, workgroupSize));
         wgpuContext.dispatchOperation(gradientYOp, calcWorkgroupGrid(sourceImage, workgroupSize));
         wgpuContext.dispatchOperation(updateParamsOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+
+        // Check how long the updateParamsOp takes
+        struct TimeStamp {
+            uint64_t start = 0;
+            uint64_t end = 0;
+        } t;
+        wgpuContext.downloadBuffer(updateParamsOp.timestampResolveBuffer, &t);
+        updateParamsDurationHistory.push_back((t.end - t.start) / 1e6);
+        wgpuContext.downloadBuffer(transformOp.timestampResolveBuffer, &t);
+        transformationDurationHistory.push_back((t.end - t.start) / 1e6);
+        wgpuContext.downloadBuffer(gradientXOp.timestampResolveBuffer, &t);
+        gradientXDurationHistory.push_back((t.end - t.start) / 1e6);
+        wgpuContext.downloadBuffer(gradientYOp.timestampResolveBuffer, &t);
+        gradientYDurationHistory.push_back((t.end - t.start) / 1e6);
+
 
         wgpuContext.downloadBuffer(parametersOutputBuffer, outputParameters.data());
 
@@ -262,6 +287,11 @@ int main()
         }
         spdlog::info("------------------------------------------------- \n");
     }
+
+    spdlog::info("Transformation shader took: {}ms", sumVector(transformationDurationHistory));
+    spdlog::info("GradientX shader took: {}ms", sumVector(gradientXDurationHistory));
+    spdlog::info("GradientY shader took: {}ms", sumVector(gradientYDurationHistory));
+    spdlog::info("UpdateParams shader took: {}ms", sumVector(updateParamsDurationHistory));
 
     matplot::plot(ssdHistory);
     matplot::title("SSD History");
