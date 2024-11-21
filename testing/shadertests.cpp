@@ -238,12 +238,8 @@ TEST_F(ShaderTest, TransformImage)
     std::vector<uint8_t> cpuOutput(cpuImage.width * cpuImage.height);
     const auto cosTheta = std::cos(uniformParams.angle);
     const auto sinTheta = std::sin(uniformParams.angle);
-    const auto centerX = cpuImage.width / 2.0F;
-    const auto centerY = cpuImage.height / 2.0F;
     for (size_t y = 0; y < cpuImage.height; y++) {
         for (size_t x = 0; x < cpuImage.width; x++) {
-            const float offsetX = x - centerX;
-            const float offsetY = y - centerY;
             const float transformedX = x * cosTheta - y * sinTheta + uniformParams.tx;
             const float transformedY = x * sinTheta + y * cosTheta + uniformParams.ty;
 
