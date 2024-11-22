@@ -1,8 +1,11 @@
 #include "gpu.h"
 #include "image.h"
 #include "utils.h"
+#include <array>
+#include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <matplot/matplot.h>
 #include <spdlog/spdlog.h>
 #include <string>
