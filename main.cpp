@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <matplot/matplot.h>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -104,20 +105,20 @@ CpuImage transform(const CpuImage& image, float angle, float tx, float ty) {
 int main()
 {
     spdlog::set_pattern("%^[%T] [%n:] %v%$");
-    auto wgpuContext = gpu::Context::newContext();
+    auto context = gpu::Context::newContext();
     const CpuImage sourceImage = Utils::loadFromDisk("data/brain.pgm");
     const CpuImage targetImage = CpuEngine::transform(sourceImage, 0.1, 100, 100);
 
-    auto sourceTexture = wgpuContext.makeTextureFromHost(sourceImage);
-    auto targetTexture = wgpuContext.makeTextureFromHost(targetImage);
-    auto movingTexture = wgpuContext.makeEmptyTexture({
+    auto sourceTexture = context.makeTextureFromHost(sourceImage);
+    auto targetTexture = context.makeTextureFromHost(targetImage);
+    auto movingTexture = context.makeEmptyTexture({
         .width = sourceImage.width,
         .height = sourceImage.height,
         .format = gpu::TextureFormat::R8Unorm,
         .usage = gpu::ResourceUsage::ReadWrite
     });
-    auto gradientXBuffer = wgpuContext.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
-    auto gradientYBuffer = wgpuContext.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
+    auto gradientXBuffer = context.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
+    auto gradientYBuffer = context.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
 
     struct TransformationParameters {
         float angle = 0.0F;
@@ -126,7 +127,13 @@ int main()
         float padding = 0.0F;
     } transformationParams;
 
-    auto paramsUniformBuffer = wgpuContext.makeUniformBuffer(&transformationParams, sizeof(TransformationParameters));
+    struct Uniforms {
+        float cosAngle = 1.0;
+        float sinAngle = 0.0;
+        std::array<float, 2> padding = {};
+    } uniforms;
+
+    auto uniformsBuffer = context.makeUniformBuffer(&uniforms, sizeof(Uniforms));
 
     const gpu::WorkgroupSize workgroupSize {16, 16, 1};
     const gpu::ComputeOperationDescriptor gradientXDesc {
@@ -158,16 +165,16 @@ int main()
             .code = Utils::readFile("shaders/transformimage.wgsl"),
             .workgroupSize = workgroupSize
         },
-        .uniformBuffers = { paramsUniformBuffer },
+        .uniformBuffers = { uniformsBuffer },
         .inputTextures = { sourceTexture },
         .outputTextures = { movingTexture },
-        .samplers = { wgpuContext.makeLinearSampler() }
+        .samplers = { context.makeLinearSampler() }
     };
 
     // Output parameters are dssd_dtheta, dssd_dtx, dssd_dty, ssd
     std::array<uint32_t, 4> outputParameters = {0, 0, 0, 0};
-    auto parametersOutputBuffer = wgpuContext.makeEmptyBuffer(sizeof(uint32_t) * outputParameters.size());
-    wgpuContext.writeToBuffer(parametersOutputBuffer, outputParameters.data());
+    auto parametersOutputBuffer = context.makeEmptyBuffer(sizeof(uint32_t) * outputParameters.size());
+    context.writeToBuffer(parametersOutputBuffer, outputParameters.data());
 
     const gpu::ComputeOperationDescriptor updateParamsDesc {
         .shader {
@@ -176,16 +183,16 @@ int main()
             .code = Utils::readFile("shaders/updateparameters.wgsl"),
             .workgroupSize = workgroupSize
         },
-        .uniformBuffers = { paramsUniformBuffer },
+        .uniformBuffers = { uniformsBuffer },
         .inputBuffers = { gradientXBuffer, gradientYBuffer },
         .inputTextures = { targetTexture, movingTexture },
         .outputBuffers = { parametersOutputBuffer }
     };
 
-    auto gradientXOp = wgpuContext.makeComputeOperation(gradientXDesc);
-    auto gradientYOp = wgpuContext.makeComputeOperation(gradientYDesc);
-    auto transformOp = wgpuContext.makeComputeOperation(transformDesc);
-    auto updateParamsOp = wgpuContext.makeComputeOperation(updateParamsDesc);
+    auto gradientXOp = context.makeComputeOperation(gradientXDesc);
+    auto gradientYOp = context.makeComputeOperation(gradientYDesc);
+    auto transformOp = context.makeComputeOperation(transformDesc);
+    auto updateParamsOp = context.makeComputeOperation(updateParamsDesc);
 
     constexpr int maxIterations = 1000;
     const float txLearningRate = 5;
@@ -193,8 +200,7 @@ int main()
     const float angleLearningRate = txLearningRate / 100;
 
 
-    float epsilon = 1e-9;
-    float decayRate = 0.9;
+    constexpr float epsilon = 1e-9;
     double angleAccumulator = 0.0;
     double txAccumulator = 0.0;
     double tyAccumulator = 0.0;
@@ -211,16 +217,23 @@ int main()
     auto originalSSD = CpuEngine::ssd(sourceImage, targetImage);
 
     std::vector<float> ssdHistory;
-    std::vector<float> transformationDurationHistory;
-    std::vector<float> gradientXDurationHistory;
-    std::vector<float> gradientYDurationHistory;
-    std::vector<float> updateParamsDurationHistory;
+    std::vector<float> transformationTimeHistory;
+    std::vector<float> gradientXTimeHistory;
+    std::vector<float> gradientYTimeHistory;
+    std::vector<float> updateParamsTimeHistory;
 
     for (int i = 0; i < maxIterations; i++) {
-        wgpuContext.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
-        wgpuContext.dispatchOperation(gradientXOp, calcWorkgroupGrid(sourceImage, workgroupSize));
-        wgpuContext.dispatchOperation(gradientYOp, calcWorkgroupGrid(sourceImage, workgroupSize));
-        wgpuContext.dispatchOperation(updateParamsOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+        uniforms.cosAngle = std::cos(transformationParams.angle);
+        uniforms.sinAngle = std::sin(transformationParams.angle);
+        context.writeToBuffer(uniformsBuffer, &transformationParams);
+        // Reset output parameters to zero
+        outputParameters = {};
+        context.writeToBuffer(parametersOutputBuffer, outputParameters.data());
+
+        context.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+        context.dispatchOperation(gradientXOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+        context.dispatchOperation(gradientYOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+        context.dispatchOperation(updateParamsOp, calcWorkgroupGrid(sourceImage, workgroupSize));
 
         // Check how long the updateParamsOp takes
         struct TimeStamp {
@@ -241,13 +254,12 @@ int main()
             { &gradientYOp.timestampResolveBuffer, &gradientYDuration}
         };
 
-        wgpuContext.downloadBuffers(bufferMappingPairs);
+        context.downloadBuffers(bufferMappingPairs);
 
-        updateParamsDurationHistory.push_back((updateParamsDuration.end - updateParamsDuration.start) / 1e6);
-        transformationDurationHistory.push_back((transformationDuration.end - transformationDuration.start) / 1e6);
-        gradientXDurationHistory.push_back((gradientXDuration.end - gradientXDuration.start) / 1e6);
-        gradientYDurationHistory.push_back((gradientYDuration.end - gradientYDuration.start) / 1e6);
-
+        updateParamsTimeHistory.push_back((updateParamsDuration.end - updateParamsDuration.start) / 1e6);
+        transformationTimeHistory.push_back((transformationDuration.end - transformationDuration.start) / 1e6);
+        gradientXTimeHistory.push_back((gradientXDuration.end - gradientXDuration.start) / 1e6);
+        gradientXTimeHistory.push_back((gradientYDuration.end - gradientYDuration.start) / 1e6);
 
         // Data on the GPU is output as u32 because WebGPU does not support f32 atomics
         // So we need to bitcast the data to float
@@ -271,12 +283,6 @@ int main()
         transformationParams.angle -= angleLearningRate * dssd_dtheta / std::sqrt(angleAccumulator + epsilon);
         transformationParams.translationX -= txLearningRate * dssd_dtx / std::sqrt(txAccumulator + epsilon);
         transformationParams.translationY -= tyLearningRate * dssd_dty / std::sqrt(tyAccumulator + epsilon);
-
-        wgpuContext.writeToBuffer(paramsUniformBuffer, &transformationParams);
-
-        // Reset output parameters to zero
-        std::fill(outputParameters.begin(), outputParameters.end(), 0.0F);
-        wgpuContext.writeToBuffer(parametersOutputBuffer, outputParameters.data());
 
         spdlog::info("Iteration {} SSD: {}", i, ssd);
         spdlog::info("Angle: {}", transformationParams.angle);
@@ -303,10 +309,10 @@ int main()
         spdlog::info("------------------------------------------------- \n");
     }
 
-    spdlog::info("Transformation shader took: {}ms", sumVector(transformationDurationHistory));
-    spdlog::info("GradientX shader took: {}ms", sumVector(gradientXDurationHistory));
-    spdlog::info("GradientY shader took: {}ms", sumVector(gradientYDurationHistory));
-    spdlog::info("UpdateParams shader took: {}ms", sumVector(updateParamsDurationHistory));
+    spdlog::info("Transformation shader took: {}ms", sumVector(transformationTimeHistory));
+    spdlog::info("GradientX shader took: {}ms", sumVector(gradientXTimeHistory));
+    spdlog::info("GradientY shader took: {}ms", sumVector(gradientYTimeHistory));
+    spdlog::info("UpdateParams shader took: {}ms", sumVector(updateParamsTimeHistory));
 
     matplot::plot(ssdHistory);
     matplot::title("SSD History");
@@ -320,7 +326,7 @@ int main()
     spdlog::info("Minimum ty: {}", minTy);
 
     // Save the final transformed image
-    auto finalTransformedImage = wgpuContext.downloadTexture(movingTexture);
+    auto finalTransformedImage = context.downloadTexture(movingTexture);
     const std::filesystem::path outputPath = "result.pgm";
     Utils::saveToDisk(finalTransformedImage, outputPath);
 }
