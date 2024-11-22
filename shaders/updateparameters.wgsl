@@ -3,7 +3,8 @@
 enable chromium_internal_graphite;
 
 struct Parameters {
-    angle: f32,
+    cosAngle: f32,
+    sinAngle: f32,
     tx: f32,
     ty: f32,
 };
@@ -59,16 +60,14 @@ fn updateParameters(
         local_dssd_dty[index] = 0;
     }
     else {
-        let cosTheta = cos(params.angle);
-        let sinTheta = sin(params.angle);
         let gradMovingX = gradientBufferX[id.y * u32(dim.x) + id.x];
         let gradMovingY = gradientBufferY[id.y * u32(dim.x) + id.x];
         let targetValue : f32 = textureLoad(targetImage, id.xy, 0).r;
         let movingValue : f32 = textureLoad(movingImage, id.xy, 0).r;
         let error : f32 = (movingValue - targetValue);
 
-        let gradXTheta = -sinTheta * f32(id.x) - cosTheta * f32(id.y);
-        let gradYTheta = cosTheta * f32(id.x) - sinTheta * f32(id.y);
+        let gradXTheta = -params.sinAngle * f32(id.x) - params.cosAngle * f32(id.y);
+        let gradYTheta = params.cosAngle * f32(id.x) - params.sinAngle * f32(id.y);
         let dssd_dtheta = 2.0 * error * (gradMovingX * gradXTheta + gradMovingY * gradYTheta);
         let dssd_dtx = 2.0 * error * gradMovingX;
         let dssd_dty = 2.0 * error * gradMovingY;

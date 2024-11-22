@@ -124,13 +124,13 @@ int main()
         float angle = 0.0F;
         float translationX = 0.0F;
         float translationY = 0.0F;
-        float padding = 0.0F;
     } transformationParams;
 
     struct Uniforms {
-        float cosAngle = 1.0;
+        float cosAngle = 0.0;
         float sinAngle = 0.0;
-        std::array<float, 2> padding = {};
+        float translationX = 0.0;
+        float translationY = 0.0;
     } uniforms;
 
     auto uniformsBuffer = context.makeUniformBuffer(&uniforms, sizeof(Uniforms));
@@ -225,7 +225,9 @@ int main()
     for (int i = 0; i < maxIterations; i++) {
         uniforms.cosAngle = std::cos(transformationParams.angle);
         uniforms.sinAngle = std::sin(transformationParams.angle);
-        context.writeToBuffer(uniformsBuffer, &transformationParams);
+        uniforms.translationX = transformationParams.translationX;
+        uniforms.translationY = transformationParams.translationY;
+        context.writeToBuffer(uniformsBuffer, &uniforms);
         // Reset output parameters to zero
         outputParameters = {};
         context.writeToBuffer(parametersOutputBuffer, outputParameters.data());

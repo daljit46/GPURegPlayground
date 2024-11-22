@@ -3,7 +3,8 @@
 enable chromium_internal_graphite;
 
 struct Parameters {
-    angle: f32,
+    cosAngle: f32,
+    sinAngle: f32,
     tx: f32,
     ty: f32,
 };
@@ -22,13 +23,10 @@ fn computeTransform(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    let cosTheta = cos(params.angle);
-    let sinTheta = sin(params.angle);
-
     // WebGPU uses column-major matrices
     let mat = mat2x2<f32>(
-        cosTheta, sinTheta,
-        -sinTheta, cosTheta
+        params.cosAngle, params.sinAngle,
+        -params.sinAngle, params.cosAngle
     );
 
     let transformed = mat * coords + vec2<f32>(params.tx, params.ty);
