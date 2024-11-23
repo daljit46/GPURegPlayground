@@ -2,6 +2,8 @@
 
 #include <vector>
 
+// TODO: Examine if we can do better with AdamW
+
 class AdamOptimizer {
 public:
     struct Parameter {
