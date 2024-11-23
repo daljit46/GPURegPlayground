@@ -327,6 +327,7 @@ int main()
     matplot::ylabel("SSD");
     matplot::show();
 
+    spdlog::info("Iteration count: {}", ssdHistory.size());
     spdlog::info("Minimum SSD: {}", minSSD);
     spdlog::info("Minimum angle: {} vs Target Angle: {}", minAngle, Utils::degreesToRadians(targetAngle));
     spdlog::info("Minimum tx: {} vs Target tx: {}", minTx, targetTx);
