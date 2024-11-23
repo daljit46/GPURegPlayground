@@ -1,4 +1,6 @@
 #include "adamoptimiser.h"
+#include <cmath>
+#include <vector>
 
 AdamOptimizer::AdamOptimizer(const std::vector<Parameter>& parameters, float beta1, float beta2, float epsilon)
     : m_parameters(parameters),
