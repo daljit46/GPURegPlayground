@@ -1,6 +1,8 @@
 #include "gpu.h"
 #include "image.h"
 #include "utils.h"
+#include "adamoptimiser.h"
+
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -107,7 +109,11 @@ int main()
     spdlog::set_pattern("%^[%T] [%n:] %v%$");
     auto context = gpu::Context::newContext();
     const CpuImage sourceImage = Utils::loadFromDisk("data/brain.pgm");
-    const CpuImage targetImage = CpuEngine::transform(sourceImage, 0.1, 100, 100);
+    constexpr float targetAngle = 10;
+    constexpr float targetTx = 20;
+    constexpr float targetTy = 78;
+
+    const CpuImage targetImage = CpuEngine::transform(sourceImage, Utils::degreesToRadians(targetAngle), targetTx, targetTy);
 
     auto sourceTexture = context.makeTextureFromHost(sourceImage);
     auto targetTexture = context.makeTextureFromHost(targetImage);
@@ -195,15 +201,17 @@ int main()
     auto updateParamsOp = context.makeComputeOperation(updateParamsDesc);
 
     constexpr int maxIterations = 1000;
-    const float txLearningRate = 5;
-    const float tyLearningRate = 5;
+    const float txLearningRate = 1;
+    const float tyLearningRate = 1;
     const float angleLearningRate = txLearningRate / 100;
 
+    std::vector<AdamOptimizer::Parameter> parameters = {
+        {.value = transformationParams.angle, .learning_rate = angleLearningRate },
+        {.value = transformationParams.translationX, .learning_rate= txLearningRate },
+        {.value = transformationParams.translationY, .learning_rate= tyLearningRate }
+    };
 
-    constexpr float epsilon = 1e-9;
-    double angleAccumulator = 0.0;
-    double txAccumulator = 0.0;
-    double tyAccumulator = 0.0;
+    AdamOptimizer optimizer(parameters);
 
     float minSSD = std::numeric_limits<float>::max();
     float minAngle = std::numeric_limits<float>::max();
@@ -277,14 +285,11 @@ int main()
             minTy = transformationParams.translationY;
         }
 
-        // Update parameters using AdaGrad
-        angleAccumulator += dssd_dtheta * dssd_dtheta;
-        txAccumulator += dssd_dtx * dssd_dtx;
-        tyAccumulator += dssd_dty * dssd_dty;
-
-        transformationParams.angle -= angleLearningRate * dssd_dtheta / std::sqrt(angleAccumulator + epsilon);
-        transformationParams.translationX -= txLearningRate * dssd_dtx / std::sqrt(txAccumulator + epsilon);
-        transformationParams.translationY -= tyLearningRate * dssd_dty / std::sqrt(tyAccumulator + epsilon);
+        // Update parameters using Adam optimizer
+        auto newParameters = optimizer.step({ dssd_dtheta, dssd_dtx, dssd_dty });
+        transformationParams.angle = newParameters[0].value;
+        transformationParams.translationX = newParameters[1].value;
+        transformationParams.translationY = newParameters[2].value;
 
         spdlog::info("Iteration {} SSD: {}", i, ssd);
         spdlog::info("Angle: {}", transformationParams.angle);
@@ -323,9 +328,9 @@ int main()
     matplot::show();
 
     spdlog::info("Minimum SSD: {}", minSSD);
-    spdlog::info("Minimum angle: {}", minAngle);
-    spdlog::info("Minimum tx: {}", minTx);
-    spdlog::info("Minimum ty: {}", minTy);
+    spdlog::info("Minimum angle: {} vs Target Angle: {}", minAngle, Utils::degreesToRadians(targetAngle));
+    spdlog::info("Minimum tx: {} vs Target tx: {}", minTx, targetTx);
+    spdlog::info("Minimum ty: {} vs Target ty: {}", minTy, targetTy);
 
     // Save the final transformed image
     auto finalTransformedImage = context.downloadTexture(movingTexture);
