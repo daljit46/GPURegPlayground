@@ -1,4 +1,7 @@
 #include "utils.h"
+#include "nifti1_io.h"
+#include "spdlog/spdlog.h"
+#include <bits/basic_string.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -13,12 +16,15 @@
 
 using namespace std::string_literals;
 
-CpuImage Utils::loadFromDisk(const std::filesystem::path &imagePath)
+PgmImage Utils::loadFromDisk(const std::filesystem::path &imagePath)
 {
     if(!std::filesystem::exists(imagePath)) {
         throw std::runtime_error("Image file not found: "s + imagePath.string());
     }
 
+    const auto extension = imagePath.extension();
+
+    PgmImage result;
     int width  = 0;
     int height = 0;
     int channels = 0;
@@ -27,31 +33,44 @@ CpuImage Utils::loadFromDisk(const std::filesystem::path &imagePath)
         throw std::runtime_error("Failed to load image: "s + stbi_failure_reason());
     }
     std::cout << "Loaded image from disk: " << imagePath << " (" << width << "x" << height << ", " << channels << " channels)" << std::endl;
-
-    CpuImage result;
+    spdlog::trace("Loaded image from disk: {} ({}x{}, {} channels)", imagePath.string(), width, height, channels);
     result.width = width;
     result.height = height;
-    // TODO: don't copy the data
     result.data = std::vector<uint8_t>(imageData, imageData + width * height * channels);
+    // TODO: don't copy the data
     stbi_image_free(imageData);
-
     return result;
+
 }
 
-void Utils::saveToDisk(const CpuImage &image, const std::filesystem::path &imagePath)
+NiftiImage Utils::loadNiftiFromDisk(const std::filesystem::path &imagePath)
+{
+    nifti_image *image = nifti_image_read(imagePath.string().c_str(), 1);
+    if(image == nullptr) {
+        throw std::runtime_error("Failed to load NIfTI image: "s + imagePath.string());
+    }
+    return NiftiImage(image);
+
+}
+
+void Utils::saveToDisk(const PgmImage &image, const std::filesystem::path &imagePath)
 {
     using namespace std::string_literals;
 
-    std::ofstream file(imagePath, std::ios::binary);
-    if(!file.is_open()) {
-        throw std::runtime_error("Failed to open file for writing: "s + imagePath.string());
+    if(imagePath.extension().string() == ".pgm") {
+        std::ofstream file(imagePath, std::ios::binary);
+        if(!file.is_open()) {
+            throw std::runtime_error("Failed to open file for writing: "s + imagePath.string());
+        }
+
+        file << "P5\n" << image.width << " " << image.height << "\n255\n";
+        file.write(reinterpret_cast<const char*>(image.data.data()), image.data.size());
+    }
+    else if(imagePath.extension().string() == ".nii") {
+        spdlog::error("Not implemented yet!");
     }
 
-    file << "P5\n" << image.width << " " << image.height << "\n255\n";
-    file.write(reinterpret_cast<const char*>(image.data.data()), image.data.size());
-    file.close();
-
-    std::cout << "Saved image to disk: " << imagePath << " (" << image.width << "x" << image.height << ")" << std::endl;
+    throw std::runtime_error("Unsupported image format: "s + imagePath.extension().string());
 }
 
 std::string Utils::readFile(const std::filesystem::path &filePath, ReadFileMode mode)
@@ -92,3 +111,5 @@ std::string Utils::replacePlaceholder(std::string_view str, std::string_view pla
 
     return result;
 }
+
+

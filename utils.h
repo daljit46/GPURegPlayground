@@ -1,13 +1,16 @@
 #pragma once
 
+#include "image.h"
 #include <filesystem>
 
-class CpuImage;
+class PgmImage;
+class NiftiImage;
 
 namespace Utils {
-[[nodiscard]] CpuImage loadFromDisk(const std::filesystem::path &imagePath);
+PgmImage loadFromDisk(const std::filesystem::path &imagePath);
+NiftiImage loadNiftiFromDisk(const std::filesystem::path &imagePath);
 
-void saveToDisk(const CpuImage &image, const std::filesystem::path &imagePath);
+void saveToDisk(const PgmImage &image, const std::filesystem::path &imagePath);
 
 enum ReadFileMode {
     Text,

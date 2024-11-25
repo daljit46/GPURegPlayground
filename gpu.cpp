@@ -2,6 +2,8 @@
 #include "image.h"
 #include "utils.h"
 
+#include "spdlog/spdlog.h"
+
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -35,52 +37,48 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     wgpu::AdapterInfo adapterInfo;
     adapter.GetInfo(&adapterInfo);
 
-    std::cout << "Adapter vendor: " << std::string_view(adapterInfo.vendor) << '\n';
-    std::cout << "Adapter type: " << parseAdapterType(adapterInfo.adapterType) << '\n';
-    std::cout << "Adapter architecture: " << std::string_view(adapterInfo.architecture) << '\n';
-    std::cout << "Adapter description: " << std::string_view(adapterInfo.description) << '\n';
-    std::cout << "Adapter device: " << std::string_view(adapterInfo.device) << '\n';
-
-
-    // Parse limits
+    spdlog::trace("Adapter vendor: {}", adapterInfo.vendor);
+    spdlog::trace("Adapter type: {}", parseAdapterType(adapterInfo.adapterType));
+    spdlog::trace("Adapter architecture: {}", adapterInfo.architecture);
+    spdlog::trace("Adapter description: {}", adapterInfo.description);
+    spdlog::trace("Adapter device: {}", adapterInfo.device);
 
     wgpu::SupportedLimits supportedLimits {};
     adapter.GetLimits(&supportedLimits);
-    std::cout << "Adapter limits:\n";
-    std::cout << "  maxTextureDimension1D: " << supportedLimits.limits.maxTextureDimension1D << '\n';
-    std::cout << "  maxTextureDimension2D: " << supportedLimits.limits.maxTextureDimension2D << '\n';
-    std::cout << "  maxTextureDimension3D: " << supportedLimits.limits.maxTextureDimension3D << '\n';
-    std::cout << "  maxTextureArrayLayers: " << supportedLimits.limits.maxTextureArrayLayers << '\n';
-    std::cout << "  maxBindGroups: " << supportedLimits.limits.maxBindGroups << '\n';
-    std::cout << "  maxBindGroupsPlusVertexBuffers: " << supportedLimits.limits.maxBindGroupsPlusVertexBuffers << '\n';
-    std::cout << "  maxBindingsPerBindGroup: " << supportedLimits.limits.maxBindingsPerBindGroup << '\n';
-    std::cout << "  maxDynamicUniformBuffersPerPipelineLayout: " << supportedLimits.limits.maxDynamicUniformBuffersPerPipelineLayout << '\n';
-    std::cout << "  maxDynamicStorageBuffersPerPipelineLayout: " << supportedLimits.limits.maxDynamicStorageBuffersPerPipelineLayout << '\n';
-    std::cout << "  maxSampledTexturesPerShaderStage: " << supportedLimits.limits.maxSampledTexturesPerShaderStage << '\n';
-    std::cout << "  maxSamplersPerShaderStage: " << supportedLimits.limits.maxSamplersPerShaderStage << '\n';
-    std::cout << "  maxStorageBuffersPerShaderStage: " << supportedLimits.limits.maxStorageBuffersPerShaderStage << '\n';
-    std::cout << "  maxStorageTexturesPerShaderStage: " << supportedLimits.limits.maxStorageTexturesPerShaderStage << '\n';
-    std::cout << "  maxUniformBuffersPerShaderStage: " << supportedLimits.limits.maxUniformBuffersPerShaderStage << '\n';
-    std::cout << "  maxUniformBufferBindingSize: " << supportedLimits.limits.maxUniformBufferBindingSize << '\n';
-    std::cout << "  maxStorageBufferBindingSize: " << supportedLimits.limits.maxStorageBufferBindingSize << '\n';
-    std::cout << "  minUniformBufferOffsetAlignment: " << supportedLimits.limits.minUniformBufferOffsetAlignment << '\n';
-    std::cout << "  minStorageBufferOffsetAlignment: " << supportedLimits.limits.minStorageBufferOffsetAlignment << '\n';
-    std::cout << "  maxVertexBuffers: " << supportedLimits.limits.maxVertexBuffers << '\n';
-    std::cout << "  maxBufferSize: " << supportedLimits.limits.maxBufferSize << '\n';
-    std::cout << "  maxVertexAttributes: " << supportedLimits.limits.maxVertexAttributes << '\n';
-    std::cout << "  maxVertexBufferArrayStride: " << supportedLimits.limits.maxVertexBufferArrayStride << '\n';
-    std::cout << "  maxInterStageShaderComponents: " << supportedLimits.limits.maxInterStageShaderComponents << '\n';
-    std::cout << "  maxInterStageShaderVariables: " << supportedLimits.limits.maxInterStageShaderVariables << '\n';
-    std::cout << "  maxColorAttachments: " << supportedLimits.limits.maxColorAttachments << '\n';
-    std::cout << "  maxColorAttachmentBytesPerSample: " << supportedLimits.limits.maxColorAttachmentBytesPerSample << '\n';
-    std::cout << "  maxComputeWorkgroupStorageSize: " << supportedLimits.limits.maxComputeWorkgroupStorageSize << '\n';
-    std::cout << "  maxComputeInvocationsPerWorkgroup: " << supportedLimits.limits.maxComputeInvocationsPerWorkgroup << '\n';
-    std::cout << "  maxComputeWorkgroupSizeX: " << supportedLimits.limits.maxComputeWorkgroupSizeX << '\n';
-    std::cout << "  maxComputeWorkgroupSizeY: " << supportedLimits.limits.maxComputeWorkgroupSizeY << '\n';
-    std::cout << "  maxComputeWorkgroupSizeZ: " << supportedLimits.limits.maxComputeWorkgroupSizeZ << '\n';
-    std::cout << "  maxComputeWorkgroupsPerDimension: " << supportedLimits.limits.maxComputeWorkgroupsPerDimension << '\n';
-
-    std::cout << "---------------------\n";
+    spdlog::trace("Adaper limits: \n");
+    spdlog::trace("  maxTextureDimension1D: {}", supportedLimits.limits.maxTextureDimension1D);
+    spdlog::trace("  maxTextureDimension2D: {}", supportedLimits.limits.maxTextureDimension2D);
+    spdlog::trace("  maxTextureDimension3D: {}", supportedLimits.limits.maxTextureDimension3D);
+    spdlog::trace("  maxTextureArrayLayers: {}", supportedLimits.limits.maxTextureArrayLayers);
+    spdlog::trace("  maxBindGroups: {}", supportedLimits.limits.maxBindGroups);
+    spdlog::trace("  maxBindGroupsPlusVertexBuffers: {}", supportedLimits.limits.maxBindGroupsPlusVertexBuffers);
+    spdlog::trace("  maxBindingsPerBindGroup: {}", supportedLimits.limits.maxBindingsPerBindGroup);
+    spdlog::trace("  maxDynamicUniformBuffersPerPipelineLayout: {}", supportedLimits.limits.maxDynamicUniformBuffersPerPipelineLayout);
+    spdlog::trace("  maxDynamicStorageBuffersPerPipelineLayout: {}", supportedLimits.limits.maxDynamicStorageBuffersPerPipelineLayout);
+    spdlog::trace("  maxSampledTexturesPerShaderStage: {}", supportedLimits.limits.maxSampledTexturesPerShaderStage);
+    spdlog::trace("  maxSamplersPerShaderStage: {}", supportedLimits.limits.maxSamplersPerShaderStage);
+    spdlog::trace("  maxStorageBuffersPerShaderStage: {}", supportedLimits.limits.maxStorageBuffersPerShaderStage);
+    spdlog::trace("  maxStorageTexturesPerShaderStage: {}", supportedLimits.limits.maxStorageTexturesPerShaderStage);
+    spdlog::trace("  maxUniformBuffersPerShaderStage: {}", supportedLimits.limits.maxUniformBuffersPerShaderStage);
+    spdlog::trace("  maxUniformBufferBindingSize: {}", supportedLimits.limits.maxUniformBufferBindingSize);
+    spdlog::trace("  maxStorageBufferBindingSize: {}", supportedLimits.limits.maxStorageBufferBindingSize);
+    spdlog::trace("  minUniformBufferOffsetAlignment: {}", supportedLimits.limits.minUniformBufferOffsetAlignment);
+    spdlog::trace("  minStorageBufferOffsetAlignment: {}", supportedLimits.limits.minStorageBufferOffsetAlignment);
+    spdlog::trace("  maxVertexBuffers: {}", supportedLimits.limits.maxVertexBuffers);
+    spdlog::trace("  maxBufferSize: {}", supportedLimits.limits.maxBufferSize);
+    spdlog::trace("  maxVertexAttributes: {}", supportedLimits.limits.maxVertexAttributes);
+    spdlog::trace("  maxVertexBufferArrayStride: {}", supportedLimits.limits.maxVertexBufferArrayStride);
+    spdlog::trace("  maxInterStageShaderComponents: {}", supportedLimits.limits.maxInterStageShaderComponents);
+    spdlog::trace("  maxInterStageShaderVariables: {}", supportedLimits.limits.maxInterStageShaderVariables);
+    spdlog::trace("  maxColorAttachments: {}", supportedLimits.limits.maxColorAttachments);
+    spdlog::trace("  maxColorAttachmentBytesPerSample: {}", supportedLimits.limits.maxColorAttachmentBytesPerSample);
+    spdlog::trace("  maxComputeWorkgroupStorageSize: {}", supportedLimits.limits.maxComputeWorkgroupStorageSize);
+    spdlog::trace("  maxComputeInvocationsPerWorkgroup: {}", supportedLimits.limits.maxComputeInvocationsPerWorkgroup);
+    spdlog::trace("  maxComputeWorkgroupSizeX: {}", supportedLimits.limits.maxComputeWorkgroupSizeX);
+    spdlog::trace("  maxComputeWorkgroupSizeY: {}", supportedLimits.limits.maxComputeWorkgroupSizeY);
+    spdlog::trace("  maxComputeWorkgroupSizeZ: {}", supportedLimits.limits.maxComputeWorkgroupSizeZ);
+    spdlog::trace("  maxComputeWorkgroupsPerDimension: {}", supportedLimits.limits.maxComputeWorkgroupsPerDimension);
+    spdlog::trace("\n");
 }
 
 wgpu::TextureUsage convertUsageToWGPU(ResourceUsage usage)
@@ -106,15 +104,12 @@ wgpu::TextureFormat convertFormatToWGPU(TextureFormat format)
     }
 }
 
-Texture createImageBufferFromHost(const CpuImage &image,
-                                  Context &context,
-                                  const wgpu::TextureUsage& additionalFlags = {}
-                                  )
+Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth, const uint8_t* data, Context &context, const wgpu::TextureUsage& additionalFlags = {})
 {
     wgpu::TextureDescriptor descriptor;
-    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.dimension = depth > 1U ? wgpu::TextureDimension::e3D : wgpu::TextureDimension::e2D;
     descriptor.format = wgpu::TextureFormat::R8Unorm;
-    descriptor.size = { image.width, image.height, 1};
+    descriptor.size = { width, height, depth };
     descriptor.sampleCount = 1;
     descriptor.viewFormatCount = 0;
     descriptor.viewFormats = nullptr;
@@ -122,7 +117,7 @@ Texture createImageBufferFromHost(const CpuImage &image,
         wgpu::TextureUsage::TextureBinding | // to read texture in shaders
         wgpu::TextureUsage::CopyDst | // to be used as destination in copy operations
         additionalFlags
-        );
+    );
 
     auto gpuTexture = context.device.CreateTexture(&descriptor);
     auto queue = context.device.GetQueue();
@@ -136,21 +131,20 @@ Texture createImageBufferFromHost(const CpuImage &image,
     const wgpu::TextureDataLayout dataLayout {
         .nextInChain = nullptr,
         .offset = 0,
-        .bytesPerRow = image.width,
-        .rowsPerImage = image.height
+        .bytesPerRow = width,
+        .rowsPerImage = height
     };
 
     queue.WriteTexture(&copyTexture,
-                       image.data.data(),
-                       image.data.size(),
+                       data,
+                       width * height * depth,
                        &dataLayout,
                        &(descriptor.size));
 
     return Texture {
         .wgpuHandle = gpuTexture,
-        .size = descriptor.size
+        .size = { width, height, depth }
     };
-
 }
 
 }
@@ -209,10 +203,16 @@ Context Context::newContext()
         wgpu::FeatureName::R8UnormStorage,
         wgpu::FeatureName::TimestampQuery
     };
+    const wgpu::RequiredLimits requiredLimits {
+        .limits = wgpu::Limits {
+            .maxComputeInvocationsPerWorkgroup = 512
+        }
+    };
     wgpu::DeviceDescriptor deviceDescriptor {};
     deviceDescriptor.nextInChain = &dawnToggles;
     deviceDescriptor.requiredFeatures = requiredFeatures.data();
     deviceDescriptor.requiredFeatureCount = requiredFeatures.size();
+    deviceDescriptor.requiredLimits = &requiredLimits;
 
     context.device = context.adapter.CreateDevice(&deviceDescriptor);
 
@@ -241,12 +241,12 @@ Context Context::newContext()
     return context;
 }
 
-Texture Context::makeEmptyTexture(const TextureSpecification &spec)
+Texture Context::makeEmptyTexture(const TextureSpecification &spec) const
 {
     wgpu::TextureDescriptor descriptor;
-    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.dimension = spec.size.depth > 1 ? wgpu::TextureDimension::e3D : wgpu::TextureDimension::e2D;
     descriptor.format = convertFormatToWGPU(spec.format);
-    descriptor.size = { spec.width, spec.height, 1};
+    descriptor.size = { spec.size.width, spec.size.height, spec.size.depth };
     descriptor.sampleCount = 1;
     descriptor.viewFormatCount = 0;
     descriptor.viewFormats = nullptr;
@@ -254,17 +254,21 @@ Texture Context::makeEmptyTexture(const TextureSpecification &spec)
 
     return Texture {
         .wgpuHandle = device.CreateTexture(&descriptor),
-        .size = descriptor.size
+        .size = spec.size
     };
 }
 
-Texture Context::makeTextureFromHost(const CpuImage &image)
+Texture Context::makeTextureFromHostPgm(const PgmImage &image)
 {
-    return createImageBufferFromHost(image, *this, {});
+    return makeTextureFromHostImage(image.width, image.height, 1, static_cast<const uint8_t*>(image.data.data()), *this, {});
 }
 
+Texture Context::makeTextureFromHostNifti(const NiftiImage &image)
+{
+    return makeTextureFromHostImage(image.width, image.height, image.depth, image.data(), *this, {});
+}
 
-CpuImage Context::downloadTexture(const Texture &buffer)
+void Context::downloadTexture(const Texture &texture, void *data)
 {
     // WebGPU requires that the bytes per row is a multiple of 256
     auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
@@ -272,34 +276,40 @@ CpuImage Context::downloadTexture(const Texture &buffer)
     };
 
     constexpr auto pixelSize = sizeof(uint8_t);
-    const auto stride = paddedBytesPerRow(buffer.size.width, pixelSize);
+    const auto stride = paddedBytesPerRow(texture.size.width, pixelSize);
 
     wgpu::CommandEncoderDescriptor descriptor {};
     descriptor.label = "Image buffer to host encoder";
 
     auto encoder = device.CreateCommandEncoder(&descriptor);
 
-    wgpu::BufferDescriptor outputBufferDescriptor {
+    const wgpu::BufferDescriptor outputBufferDescriptor {
         .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
-        .size = uint64_t{stride * buffer.size.height}
+        .size = static_cast<uint64_t>(stride) * texture.size.height * texture.size.depth,
+        .mappedAtCreation = false
     };
-    outputBufferDescriptor.mappedAtCreation = false;
 
     auto outputBuffer = device.CreateBuffer(&outputBufferDescriptor);
 
     const wgpu::ImageCopyTexture copyTexture {
-        .texture = buffer.wgpuHandle
+        .texture = texture.wgpuHandle
     };
     const wgpu::ImageCopyBuffer copyBuffer {
         .layout = wgpu::TextureDataLayout{
             .offset = 0,
-            .bytesPerRow = paddedBytesPerRow(buffer.size.width, pixelSize),
-            .rowsPerImage = buffer.size.height
+            .bytesPerRow = paddedBytesPerRow(texture.size.width, pixelSize),
+            .rowsPerImage = texture.size.height
         },
         .buffer = outputBuffer
     };
 
-    encoder.CopyTextureToBuffer(&copyTexture, &copyBuffer, &buffer.size);
+    const wgpu::Extent3D copySize {
+        .width = texture.size.width,
+        .height = texture.size.height,
+        .depthOrArrayLayers = texture.size.depth
+    };
+
+    encoder.CopyTextureToBuffer(&copyTexture, &copyBuffer, &copySize);
     auto queue = device.GetQueue();
     auto commands = encoder.Finish();
     queue.Submit(1, &commands);
@@ -343,24 +353,15 @@ CpuImage Context::downloadTexture(const Texture &buffer)
     // Wait for mapping to finish
     instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
 
-    // Copy the data to a new vector with the correct width
-    std::vector<uint8_t> data;
-    data.reserve(buffer.size.width * buffer.size.height);
-
-    for(uint32_t y = 0; y < buffer.size.height; ++y) {
-        const auto rowStart = mapResult.data + y * stride;
-        data.insert(data.end(), rowStart, rowStart + buffer.size.width * pixelSize);
+    uint8_t* dataPtr = reinterpret_cast<uint8_t*>(data);
+    for(uint32_t z = 0; z < texture.size.depth; ++z) {
+        for(uint32_t y = 0; y < texture.size.height; ++y) {
+            const auto rowStart = mapResult.data + z * texture.size.height * stride + y * stride;
+            std::memcpy(dataPtr, rowStart, texture.size.width * pixelSize);
+        }
     }
 
-    CpuImage image;
-    image.width = buffer.size.width;
-    image.height = buffer.size.height;
-    image.data = std::move(data);
-
-
     mapResult.buffer.Unmap();
-
-    return image;
 }
 
 DataBuffer Context::makeEmptyBuffer(size_t size)
@@ -443,7 +444,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
             .visibility = wgpu::ShaderStage::Compute,
             .texture = wgpu::TextureBindingLayout {
                 .sampleType = wgpu::TextureSampleType::Float,
-                .viewDimension = wgpu::TextureViewDimension::e2D
+                .viewDimension = texture.size.depth > 1 ? wgpu::TextureViewDimension::e3D : wgpu::TextureViewDimension::e2D,
             }
         };
 
@@ -471,20 +472,20 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto& imageBuffer: operationDescriptor.outputTextures) {
+    for(const auto& outputTexture: operationDescriptor.outputTextures) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
             .storageTexture = {
                 .access = wgpu::StorageTextureAccess::WriteOnly,
-                .format = imageBuffer.wgpuHandle.GetFormat(),
-                .viewDimension = wgpu::TextureViewDimension::e2D
+                .format = outputTexture.wgpuHandle.GetFormat(),
+                .viewDimension = outputTexture.size.depth > 1 ? wgpu::TextureViewDimension::e3D : wgpu::TextureViewDimension::e2D
             }
         };
 
         const wgpu::BindGroupEntry bindGroupEntry {
             .binding = entry.binding,
-            .textureView = imageBuffer.wgpuHandle.CreateView()
+            .textureView = outputTexture.wgpuHandle.CreateView()
         };
 
         layoutEntries.push_back(entry);
@@ -681,7 +682,7 @@ void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& 
     outputBuffer.Unmap();
 }
 
-void Context::writeToBuffer(const DataBuffer &dataBuffer,void *data)
+void Context::writeToBuffer(const DataBuffer &dataBuffer,void *data) const
 {
     device.GetQueue().WriteBuffer(dataBuffer.wgpuHandle, 0, data, dataBuffer.size);
 }
@@ -703,7 +704,7 @@ void Context::dispatchOperation(const ComputeOperation& operation,
         .label = operation.name.c_str(),
         .timestampWrites = &timestampWrites,
     };
-    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    wgpu::CommandEncoder const encoder = device.CreateCommandEncoder();
     wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&passDescriptor);
     pass.SetPipeline(operation.pipeline);
     pass.SetBindGroup(0, operation.bindGroup);

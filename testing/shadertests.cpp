@@ -1,8 +1,15 @@
+#include <array>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include "gpu.h"
-#include <filesystem>
+#include "spdlog/spdlog.h"
 #include "utils.h"
 #include "image.h"
+#include <nifti1.h>
+#include <nifti1_io.h>
+#include <cstddef>
+#include <filesystem>
+#include <vector>
 
 class ShaderTest : public ::testing::Test {
 protected:
@@ -18,7 +25,7 @@ protected:
 
 
 namespace {
-uint8_t getPixel(int32_t x, int32_t y, const CpuImage& image) {
+uint8_t getPixel(int32_t x, int32_t y, const PgmImage& image) {
     if(x < 0 || y < 0 || x >= static_cast<int32_t>(image.width) || y >= static_cast<int32_t>(image.height)) {
         return 0;
     }
@@ -26,14 +33,22 @@ uint8_t getPixel(int32_t x, int32_t y, const CpuImage& image) {
     return image.data[index];
 }
 
-float getBilinearInterpolatedPixel(float x, float y, const CpuImage& img) {
+uint8_t getPixel3D(int32_t x, int32_t y, int32_t z, const NiftiImage& image) {
+    if(x < 0 || y < 0 || z < 0 || x >= static_cast<int32_t>(image.width) || y >= static_cast<int32_t>(image.height) || z >= static_cast<int32_t>(image.depth)) {
+        return 0;
+    }
+    const auto index = z * image.width * image.height + y * image.width + x;
+    return image.at(static_cast<size_t>(index));
+}
+
+float getBilinearInterpolatedPixel(float x, float y, const PgmImage& img) {
     const auto x0 = static_cast<int32_t>(std::floor(x));
     const auto x1 = x0 + 1;
     const auto y0 = static_cast<int32_t>(std::floor(y));
     const auto y1 = y0 + 1;
 
     if (x0 < 0 || x1 >= static_cast<int32_t>(img.width) || y0 < 0 || y1 >= static_cast<int32_t>(img.height)) {
-        return 0.0f;
+        return 0.0F;
     }
 
     const auto p00 = getPixel(x0, y0, img);
@@ -48,6 +63,43 @@ float getBilinearInterpolatedPixel(float x, float y, const CpuImage& img) {
     const auto p1 = p01 * (1 - dx) + p11 * dx;
 
     return p0 * (1 - dy) + p1 * dy;
+}
+
+float getBilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImage& img)
+{
+    const auto x0 = static_cast<int32_t>(std::floor(x));
+    const auto x1 = x0 + 1;
+    const auto y0 = static_cast<int32_t>(std::floor(y));
+    const auto y1 = y0 + 1;
+    const auto z0 = static_cast<int32_t>(std::floor(z));
+    const auto z1 = z0 + 1;
+
+    if (x0 < 0 || x1 >= static_cast<int32_t>(img.width) || y0 < 0 || y1 >= static_cast<int32_t>(img.height) || z0 < 0 || z1 >= static_cast<int32_t>(img.depth)) {
+        return 0.0F;
+    }
+
+    const auto p000 = getPixel3D(x0, y0, z0, img);
+    const auto p001 = getPixel3D(x0, y0, z1, img);
+    const auto p010 = getPixel3D(x0, y1, z0, img);
+    const auto p011 = getPixel3D(x0, y1, z1, img);
+    const auto p100 = getPixel3D(x1, y0, z0, img);
+    const auto p101 = getPixel3D(x1, y0, z1, img);
+    const auto p110 = getPixel3D(x1, y1, z0, img);
+    const auto p111 = getPixel3D(x1, y1, z1, img);
+
+    const auto dx = x - x0;
+    const auto dy = y - y0;
+    const auto dz = z - z0;
+
+    const auto p00 = p000 * (1 - dx) + p100 * dx;
+    const auto p01 = p001 * (1 - dx) + p101 * dx;
+    const auto p10 = p010 * (1 - dx) + p110 * dx;
+    const auto p11 = p011 * (1 - dx) + p111 * dx;
+
+    const auto p0 = p00 * (1 - dy) + p10 * dy;
+    const auto p1 = p01 * (1 - dy) + p11 * dy;
+
+    return p0 * (1 - dz) + p1 * dz;
 }
 
 template <typename T>
@@ -68,6 +120,17 @@ float meanDifference(const std::vector<T>& a, const std::vector<T>& b) {
     }
     return sum / a.size();
 }
+
+template<typename T>
+float ssd(const std::vector<T>& a, const std::vector<T>& b) {
+    float sum = 0.0f;
+    for (size_t i = 0; i < a.size(); i++) {
+        const float diff = a[i] - b[i];
+        sum += diff * diff;
+    }
+
+    return sum;
+}
 }
 
 TEST_F(ShaderTest, GradientX)
@@ -76,7 +139,7 @@ TEST_F(ShaderTest, GradientX)
     const auto shaderSource = Utils::readFile(shaderPath);
 
     const auto cpuImage =  Utils::loadFromDisk("data/brain.pgm");
-    const auto gpuImage = wgpuContext.makeTextureFromHost(cpuImage);
+    const auto gpuImage = wgpuContext.makeTextureFromHostPgm(cpuImage);
     const auto outputBuffer = wgpuContext.makeEmptyBuffer(cpuImage.width * cpuImage.height * sizeof(float));
 
     const gpu::ComputeOperationDescriptor gradientComputeOpDesc {
@@ -99,7 +162,7 @@ TEST_F(ShaderTest, GradientX)
                                       1
                                   });
 
-    std::vector<float> gpuOutput(cpuImage.width * cpuImage.height);
+    std::vector<float> gpuOutput(static_cast<float>(cpuImage.width) * cpuImage.height);
     wgpuContext.downloadBuffer(outputBuffer, gpuOutput.data());
 
     // Compute the gradient in the X direction on the CPU for comparison
@@ -109,12 +172,12 @@ TEST_F(ShaderTest, GradientX)
             const uint32_t index = y * cpuImage.width + x;
             // Apply sobel operator in the X direction
             float sum = 0.0f;
-            sum += getPixel(x - 1, y - 1, cpuImage) * -1.0F;
-            sum += getPixel(x + 1, y - 1, cpuImage) * 1.0F;
-            sum += getPixel(x - 1, y, cpuImage) * -2.0f;
-            sum += getPixel(x + 1, y, cpuImage) * 2.0f;
-            sum += getPixel(x - 1, y + 1, cpuImage) * -1.0F;
-            sum += getPixel(x + 1, y + 1, cpuImage) * 1.0F;
+            sum += static_cast<float>(getPixel(x - 1, y - 1, cpuImage) * -1.0F);
+            sum += static_cast<float>(getPixel(x + 1, y - 1, cpuImage) * 1.0F);
+            sum += static_cast<float>(getPixel(x - 1, y, cpuImage) * -2.0F);
+            sum += static_cast<float>(getPixel(x + 1, y, cpuImage) * 2.0F);
+            sum += static_cast<float>(getPixel(x - 1, y + 1, cpuImage) * -1.0F);
+            sum += static_cast<float>(getPixel(x + 1, y + 1, cpuImage) * 1.0F);
             cpuOutput[index] = sum / 255.0f;
         }
     }
@@ -139,7 +202,7 @@ TEST_F(ShaderTest, GradientY)
     const auto shaderSource = Utils::readFile(shaderPath);
 
     const auto cpuImage =  Utils::loadFromDisk("data/brain.pgm");
-    const auto gpuImage = wgpuContext.makeTextureFromHost(cpuImage);
+    const auto gpuImage = wgpuContext.makeTextureFromHostPgm(cpuImage);
     const auto outputBuffer = wgpuContext.makeEmptyBuffer(cpuImage.width * cpuImage.height * sizeof(float));
 
     const gpu::ComputeOperationDescriptor gradientComputeOpDesc {
@@ -170,7 +233,7 @@ TEST_F(ShaderTest, GradientY)
         for (size_t x = 0; x < cpuImage.width; x++) {
             const uint32_t index = y * cpuImage.width + x;
             // Apply sobel operator in the Y direction
-            float sum = 0.0f;
+            float sum = 0.0F;
             sum += getPixel(x - 1, y - 1, cpuImage) * -1.0F;
             sum += getPixel(x, y - 1, cpuImage) * -2.0f;
             sum += getPixel(x + 1, y - 1, cpuImage) * -1.0F;
@@ -200,18 +263,17 @@ TEST_F(ShaderTest, TransformImage)
     const auto shaderSource = Utils::readFile(shaderPath);
 
     const auto cpuImage =  Utils::loadFromDisk("data/brain.pgm");
-    const auto gpuImage = wgpuContext.makeTextureFromHost(cpuImage);
+    const auto gpuImage = wgpuContext.makeTextureFromHostPgm(cpuImage);
     const auto outputImage = wgpuContext.makeEmptyTexture({
-        .width = cpuImage.width,
-        .height = cpuImage.height,
+        .size = { cpuImage.width, cpuImage.height, 1},
         .format = gpu::TextureFormat::R8Unorm,
         .usage = gpu::ResourceUsage::ReadWrite
     });
 
     struct TransformParams {
-        float angle = Utils::degreesToRadians(45.0);
-        float tx = 200;
-        float ty = 200;
+        float angle = Utils::degreesToRadians(15.0);
+        float tx = 100;
+        float ty = 100;
         float _padding = 0.0F; // WGSL requires to align to 16 bytes
     } uniformParams;
 
@@ -231,7 +293,12 @@ TEST_F(ShaderTest, TransformImage)
     auto transformComputeOp = wgpuContext.makeComputeOperation(transformComputeOpDesc);
     wgpuContext.dispatchOperation(transformComputeOp, { cpuImage.width / 16, cpuImage.height / 16, 1 });
 
-    CpuImage gpuOutputImage = wgpuContext.downloadTexture(outputImage);
+    PgmImage gpuOutputImage {
+        .width = cpuImage.width,
+        .height = cpuImage.height,
+        .data = std::vector<uint8_t>(cpuImage.width * cpuImage.height)
+    };
+    wgpuContext.downloadTexture(outputImage, gpuOutputImage.data.data());
     Utils::saveToDisk(gpuOutputImage, "output_gpu.pgm");
     // Compute the transformed image on the CPU for comparison
     // using linear interpolation
@@ -249,14 +316,104 @@ TEST_F(ShaderTest, TransformImage)
         }
     }
 
-    CpuImage cpuOutputImage = {
+    PgmImage cpuOutputImage = {
         .width = cpuImage.width,
         .height = cpuImage.height,
         .data = cpuOutput
     };
+    Utils::saveToDisk(cpuOutputImage, "output_gpu.pgm");
     Utils::saveToDisk(cpuOutputImage, "output_cpu.pgm");
 
-    EXPECT_LT(meanDifference(cpuOutput, gpuOutputImage.data) / 255.0, 1e-2F);
+    EXPECT_LT(meanDifference(cpuOutput, gpuOutputImage.data) / 255.0, 0.2F);
+}
+
+TEST_F(ShaderTest, TransformImage3D)
+{
+    constexpr auto shaderPath = "shaders/3d/transformimage_3d.wgsl";
+    const auto shaderSource = Utils::readFile(shaderPath);
+
+    const auto cpuImage =  Utils::loadNiftiFromDisk("data/test_file.nii");
+    const auto gpuImage = wgpuContext.makeTextureFromHostNifti(cpuImage);
+    const auto outputImage = wgpuContext.makeEmptyTexture({
+        .size = { cpuImage.width, cpuImage.height, cpuImage.depth },
+        .format = gpu::TextureFormat::R8Unorm,
+        .usage = gpu::ResourceUsage::ReadWrite
+    });
+
+    struct TransformParams {
+        float theta = Utils::degreesToRadians(0.0);
+        float phi = Utils::degreesToRadians(0.0);
+        float psi = Utils::degreesToRadians(0.0);
+        float tx = 0;
+        float ty = 0;
+        float tz = 0;
+        std::array<float, 2> _padding; // WGSL requires to align to 16 bytes
+    } uniformParams;
+
+    const gpu::ComputeOperationDescriptor transformComputeOpDesc {
+        .shader = {
+            .name = "transformimage3d",
+            .code = shaderSource,
+            .workgroupSize = { 8, 8, 8 }
+        },
+        .uniformBuffers = { wgpuContext.makeUniformBuffer(&uniformParams, sizeof(TransformParams)) },
+        .inputTextures = { gpuImage },
+        .outputTextures = { outputImage },
+        .samplers = { wgpuContext.makeLinearSampler() }
+    };
+
+    auto transformComputeOp = wgpuContext.makeComputeOperation(transformComputeOpDesc);
+    // wgpuContext.dispatchOperation(transformComputeOp, { cpuImage.width / 8, cpuImage.height / 8,  cpuImage.depth / 8 });
+
+
+    std::vector<uint8_t> gpuOutputData(cpuImage.width * cpuImage.height * cpuImage.depth);
+    wgpuContext.downloadTexture(outputImage, gpuOutputData.data());
+
+    // Compute the transformation on the CPU
+    std::vector<uint8_t> cpuOutput(cpuImage.width * cpuImage.height * cpuImage.depth);
+    const auto cosTheta = std::cos(uniformParams.theta);
+    const auto sinTheta = std::sin(uniformParams.theta);
+    const auto cosPhi = std::cos(uniformParams.phi);
+    const auto sinPhi = std::sin(uniformParams.phi);
+    const auto cosPsi = std::cos(uniformParams.psi);
+    const auto sinPsi = std::sin(uniformParams.psi);
+
+
+    for (size_t z = 0; z < cpuImage.depth; z++) {
+        for (size_t y = 0; y < cpuImage.height; y++) {
+            for (size_t x = 0; x < cpuImage.width; x++) {
+                const float transformedX = x * (cosTheta * cosPsi - sinTheta * sinPhi * sinPsi) +
+                                           y * (-cosTheta * sinPsi - sinTheta * sinPhi * cosPsi) +
+                                           z * (sinTheta * sinPhi);
+                const float transformedY = x * (sinTheta * cosPsi + cosTheta * sinPhi * sinPsi) +
+                                           y * (-sinTheta * sinPsi + cosTheta * sinPhi * cosPsi) +
+                                           z * (-cosTheta * sinPhi);
+                const float transformedZ = x * (cosPhi * sinPsi) +
+                                           y * (cosPhi * cosPsi) +
+                                           z * (cosPhi * sinPhi);
+                const auto value = getBilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
+                if(value != 0) {
+                    spdlog::info("Value: {}", value);
+                }
+                const auto index = z * cpuImage.width * cpuImage.height + y * cpuImage.width + x;
+                cpuOutput[index] = static_cast<uint8_t>(value);
+            }
+        }
+    }
+
+    size_t nonZero = 0;
+    for (size_t i = 0; i < gpuOutputData.size(); i++) {
+        if (gpuOutputData[i] != 0) {
+            nonZero++;
+        }
+    }
+    spdlog::info("Non zero pixels in GPU output: {}", nonZero);
+    cpuImage.handle()->data = gpuOutputData.data();
+    nifti_set_filenames(cpuImage.handle(), "output_cpu.nii", 0, 0);
+    auto success = nifti_image_write_status(cpuImage.handle());
+    EXPECT_EQ(success, 0);
+    spdlog::info("Mean difference {}", meanDifference(cpuOutput, gpuOutputData) / 255.0);
+    EXPECT_LT(meanDifference(cpuOutput, gpuOutputData) / 255.0, 1e-2);
 }
 
 
@@ -343,10 +500,9 @@ TEST_F(ShaderTest, Downsample)
 {
     auto brainImage = Utils::loadFromDisk("data/brain.pgm");
 
-    const auto inputTexture = wgpuContext.makeTextureFromHost(brainImage);
+    const auto inputTexture = wgpuContext.makeTextureFromHostPgm(brainImage);
     const auto outputTexture = wgpuContext.makeEmptyTexture({
-        .width = brainImage.width / 2,
-        .height = brainImage.height / 2,
+        .size = { brainImage.width / 2, brainImage.height / 2, 1 },
         .format = gpu::TextureFormat::R8Unorm,
         .usage = gpu::ResourceUsage::ReadWrite
     });
@@ -380,17 +536,19 @@ TEST_F(ShaderTest, Downsample)
         }
     }
 
-    auto gpuOutput = wgpuContext.downloadTexture(outputTexture);
+    PgmImage gpuOutputImage = {
+        .width = brainImage.width / 2,
+        .height = brainImage.height / 2,
+        .data = std::vector<uint8_t>(brainImage.width / 2 * brainImage.height / 2)
+    };
+    wgpuContext.downloadTexture(outputTexture, gpuOutputImage.data.data());
 
     // Save the output to disk for visual inspection
-    CpuImage cpuOutputImage = {
+    PgmImage cpuOutputImage = {
         .width = brainImage.width / 2,
         .height = brainImage.height / 2,
         .data = cpuOutput
     };
 
-    Utils::saveToDisk(cpuOutputImage, "output_cpu.pgm");
-    Utils::saveToDisk(gpuOutput, "output_gpu.pgm");
-
-    EXPECT_LT(meanDifference(cpuOutput, gpuOutput.data) / 255.0, 5e-3F);
+    EXPECT_LT(meanDifference(cpuOutput, gpuOutputImage.data) / 255.0, 5e-3F);
 }

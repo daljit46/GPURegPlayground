@@ -1,19 +1,22 @@
 #include <gtest/gtest.h>
 #include "gpu.h"
+#include "webgpu/webgpu_cpp.h"
+
+class GpuTest : public ::testing::Test {
+protected:
+    void SetUp() override{
+        wgpuContext = gpu::Context::newContext();
+        EXPECT_NE(wgpuContext.instance, nullptr);
+        EXPECT_NE(wgpuContext.adapter, nullptr);
+        EXPECT_NE(wgpuContext.device, nullptr);
+    }
+
+    gpu::Context wgpuContext;
+};
 
 
-
-TEST(GPUAPI, ContextCreation)
+TEST_F(GpuTest, MakeEmptyBuffer)
 {
-    auto wgpuContext = gpu::Context::newContext();
-    EXPECT_NE(wgpuContext.instance, nullptr);
-    EXPECT_NE(wgpuContext.adapter, nullptr);
-    EXPECT_NE(wgpuContext.device, nullptr);
-}
-
-TEST(GPUAPI, MakeEmptyBuffer)
-{
-    auto wgpuContext = gpu::Context::newContext();
     const gpu::DataBuffer buffer = wgpuContext.makeEmptyBuffer(1024);
     const wgpu::Buffer& wgpuHandle = buffer.wgpuHandle;
     EXPECT_NE(wgpuHandle.Get(), nullptr);
@@ -22,9 +25,8 @@ TEST(GPUAPI, MakeEmptyBuffer)
 }
 
 
-TEST(GPUAPI, WriteToBuffer)
+TEST_F(GpuTest, WriteToBuffer)
 {
-    auto wgpuContext = gpu::Context::newContext();
     const gpu::DataBuffer buffer = wgpuContext.makeEmptyBuffer(1024);
 
     std::vector<uint8_t> data(1024);

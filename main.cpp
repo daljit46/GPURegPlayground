@@ -12,6 +12,7 @@
 #include <matplot/matplot.h>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 template<typename T>
@@ -39,7 +40,7 @@ private:
 
 
 namespace CpuEngine {
-double ssd(const CpuImage& source, const CpuImage& target) {
+double ssd(const PgmImage& source, const PgmImage& target) {
     assert(source.width == target.width && source.height == target.height);
 
     double sum = 0.0F;
@@ -51,8 +52,8 @@ double ssd(const CpuImage& source, const CpuImage& target) {
     return sum;
 }
 
-CpuImage transform(const CpuImage& image, float angle, float tx, float ty) {
-    CpuImage result {
+PgmImage transform(const PgmImage& image, float angle, float tx, float ty) {
+    PgmImage result {
         .width = image.width,
         .height = image.height,
     };
@@ -106,234 +107,233 @@ CpuImage transform(const CpuImage& image, float angle, float tx, float ty) {
 
 int main()
 {
-    spdlog::set_pattern("%^[%T] [%n:] %v%$");
-    auto context = gpu::Context::newContext();
-    const CpuImage sourceImage = Utils::loadFromDisk("data/brain.pgm");
-    constexpr float targetAngle = 10;
-    constexpr float targetTx = 20;
-    constexpr float targetTy = 78;
+    // spdlog::set_pattern("%^[%T] [%n:] %v%$");
+    // auto context = gpu::Context::newContext();
+    // const PgmImage sourceImage = Utils::loadFromDisk("data/brain.pgm");
+    // constexpr float targetAngle = 10;
+    // constexpr float targetTx = 20;
+    // constexpr float targetTy = 78;
 
-    const CpuImage targetImage = CpuEngine::transform(sourceImage, Utils::degreesToRadians(targetAngle), targetTx, targetTy);
+    // const PgmImage targetImage = CpuEngine::transform(sourceImage, Utils::degreesToRadians(targetAngle), targetTx, targetTy);
 
-    auto sourceTexture = context.makeTextureFromHost(sourceImage);
-    auto targetTexture = context.makeTextureFromHost(targetImage);
-    auto movingTexture = context.makeEmptyTexture({
-        .width = sourceImage.width,
-        .height = sourceImage.height,
-        .format = gpu::TextureFormat::R8Unorm,
-        .usage = gpu::ResourceUsage::ReadWrite
-    });
-    auto gradientXBuffer = context.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
-    auto gradientYBuffer = context.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
+    // auto sourceTexture = context.makeTextureFromHostPgm(sourceImage);
+    // auto targetTexture = context.makeTextureFromHostPgm(targetImage);
+    // auto movingTexture = context.makeEmptyTexture({
+    //     .size = {sourceImage.width, sourceImage.height, 1},
+    //     .format = gpu::TextureFormat::R8Unorm,
+    //     .usage = gpu::ResourceUsage::ReadWrite
+    // });
+    // auto gradientXBuffer = context.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
+    // auto gradientYBuffer = context.makeEmptyBuffer(sizeof(float) * sourceImage.width * sourceImage.height);
 
-    struct TransformationParameters {
-        float angle = 0.0F;
-        float translationX = 0.0F;
-        float translationY = 0.0F;
-    } transformationParams;
+    // struct TransformationParameters {
+    //     float angle = 0.0F;
+    //     float translationX = 0.0F;
+    //     float translationY = 0.0F;
+    // } transformationParams;
 
-    struct Uniforms {
-        float cosAngle = 0.0;
-        float sinAngle = 0.0;
-        float translationX = 0.0;
-        float translationY = 0.0;
-    } uniforms;
+    // struct Uniforms {
+    //     float cosAngle = 0.0;
+    //     float sinAngle = 0.0;
+    //     float translationX = 0.0;
+    //     float translationY = 0.0;
+    // } uniforms;
 
-    auto uniformsBuffer = context.makeUniformBuffer(&uniforms, sizeof(Uniforms));
+    // auto uniformsBuffer = context.makeUniformBuffer(&uniforms, sizeof(Uniforms));
 
-    const gpu::WorkgroupSize workgroupSize {16, 16, 1};
-    const gpu::ComputeOperationDescriptor gradientXDesc {
-        .shader = {
-            .name="gradientx",
-            .entryPoint = "computeSobelX",
-            .code = Utils::readFile("shaders/gradientx.wgsl"),
-            .workgroupSize = workgroupSize
-        },
-        .inputTextures = { movingTexture },
-        .outputBuffers = { gradientXBuffer }
-    };
+    // const gpu::WorkgroupSize workgroupSize {16, 16, 1};
+    // const gpu::ComputeOperationDescriptor gradientXDesc {
+    //     .shader = {
+    //         .name="gradientx",
+    //         .entryPoint = "computeSobelX",
+    //         .code = Utils::readFile("shaders/gradientx.wgsl"),
+    //         .workgroupSize = workgroupSize
+    //     },
+    //     .inputTextures = { movingTexture },
+    //     .outputBuffers = { gradientXBuffer }
+    // };
 
-    const gpu::ComputeOperationDescriptor gradientYDesc{
-        .shader {
-            .name="gradienty",
-            .entryPoint = "computeSobelY",
-            .code = Utils::readFile("shaders/gradienty.wgsl"),
-            .workgroupSize = workgroupSize
-        },
-        .inputTextures = { movingTexture },
-        .outputBuffers = { gradientYBuffer }
-    };
+    // const gpu::ComputeOperationDescriptor gradientYDesc{
+    //     .shader {
+    //         .name="gradienty",
+    //         .entryPoint = "computeSobelY",
+    //         .code = Utils::readFile("shaders/gradienty.wgsl"),
+    //         .workgroupSize = workgroupSize
+    //     },
+    //     .inputTextures = { movingTexture },
+    //     .outputBuffers = { gradientYBuffer }
+    // };
 
-    const gpu::ComputeOperationDescriptor transformDesc {
-        .shader {
-            .name = "transform",
-            .entryPoint = "computeTransform",
-            .code = Utils::readFile("shaders/transformimage.wgsl"),
-            .workgroupSize = workgroupSize
-        },
-        .uniformBuffers = { uniformsBuffer },
-        .inputTextures = { sourceTexture },
-        .outputTextures = { movingTexture },
-        .samplers = { context.makeLinearSampler() }
-    };
+    // const gpu::ComputeOperationDescriptor transformDesc {
+    //     .shader {
+    //         .name = "transform",
+    //         .entryPoint = "computeTransform",
+    //         .code = Utils::readFile("shaders/transformimage.wgsl"),
+    //         .workgroupSize = workgroupSize
+    //     },
+    //     .uniformBuffers = { uniformsBuffer },
+    //     .inputTextures = { sourceTexture },
+    //     .outputTextures = { movingTexture },
+    //     .samplers = { context.makeLinearSampler() }
+    // };
 
-    // Output parameters are dssd_dtheta, dssd_dtx, dssd_dty, ssd
-    std::array<uint32_t, 4> outputParameters = {0, 0, 0, 0};
-    auto parametersOutputBuffer = context.makeEmptyBuffer(sizeof(uint32_t) * outputParameters.size());
-    context.writeToBuffer(parametersOutputBuffer, outputParameters.data());
+    // // Output parameters are dssd_dtheta, dssd_dtx, dssd_dty, ssd
+    // std::array<uint32_t, 4> outputParameters = {0, 0, 0, 0};
+    // auto parametersOutputBuffer = context.makeEmptyBuffer(sizeof(uint32_t) * outputParameters.size());
+    // context.writeToBuffer(parametersOutputBuffer, outputParameters.data());
 
-    const gpu::ComputeOperationDescriptor updateParamsDesc {
-        .shader {
-            .name = "updateparameters",
-            .entryPoint = "updateParameters",
-            .code = Utils::readFile("shaders/updateparameters.wgsl"),
-            .workgroupSize = workgroupSize
-        },
-        .uniformBuffers = { uniformsBuffer },
-        .inputBuffers = { gradientXBuffer, gradientYBuffer },
-        .inputTextures = { targetTexture, movingTexture },
-        .outputBuffers = { parametersOutputBuffer }
-    };
+    // const gpu::ComputeOperationDescriptor updateParamsDesc {
+    //     .shader {
+    //         .name = "updateparameters",
+    //         .entryPoint = "updateParameters",
+    //         .code = Utils::readFile("shaders/updateparameters.wgsl"),
+    //         .workgroupSize = workgroupSize
+    //     },
+    //     .uniformBuffers = { uniformsBuffer },
+    //     .inputBuffers = { gradientXBuffer, gradientYBuffer },
+    //     .inputTextures = { targetTexture, movingTexture },
+    //     .outputBuffers = { parametersOutputBuffer }
+    // };
 
-    auto gradientXOp = context.makeComputeOperation(gradientXDesc);
-    auto gradientYOp = context.makeComputeOperation(gradientYDesc);
-    auto transformOp = context.makeComputeOperation(transformDesc);
-    auto updateParamsOp = context.makeComputeOperation(updateParamsDesc);
+    // auto gradientXOp = context.makeComputeOperation(gradientXDesc);
+    // auto gradientYOp = context.makeComputeOperation(gradientYDesc);
+    // auto transformOp = context.makeComputeOperation(transformDesc);
+    // auto updateParamsOp = context.makeComputeOperation(updateParamsDesc);
 
-    constexpr int maxIterations = 1000;
-    const float txLearningRate = 1;
-    const float tyLearningRate = 1;
-    const float angleLearningRate = txLearningRate / 100;
+    // constexpr int maxIterations = 1000;
+    // const float txLearningRate = 1;
+    // const float tyLearningRate = 1;
+    // const float angleLearningRate = txLearningRate / 100;
 
-    std::vector<AdamOptimizer::Parameter> parameters = {
-        {.value = transformationParams.angle, .learning_rate = angleLearningRate },
-        {.value = transformationParams.translationX, .learning_rate= txLearningRate },
-        {.value = transformationParams.translationY, .learning_rate= tyLearningRate }
-    };
+    // std::vector<AdamOptimizer::Parameter> parameters = {
+    //     {.value = transformationParams.angle, .learning_rate = angleLearningRate },
+    //     {.value = transformationParams.translationX, .learning_rate= txLearningRate },
+    //     {.value = transformationParams.translationY, .learning_rate= tyLearningRate }
+    // };
 
-    AdamOptimizer optimizer(parameters);
+    // AdamOptimizer optimizer(parameters);
 
-    float minSSD = std::numeric_limits<float>::max();
-    float minAngle = std::numeric_limits<float>::max();
-    float minTx = std::numeric_limits<float>::max();
-    float minTy = std::numeric_limits<float>::max();
+    // float minSSD = std::numeric_limits<float>::max();
+    // float minAngle = std::numeric_limits<float>::max();
+    // float minTx = std::numeric_limits<float>::max();
+    // float minTy = std::numeric_limits<float>::max();
 
-    auto calcWorkgroupGrid = [](const CpuImage& image, const gpu::WorkgroupSize& workgroupSize) {
-        return gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1};
-    };
+    // auto calcWorkgroupGrid = [](const PgmImage& image, const gpu::WorkgroupSize& workgroupSize) {
+    //     return gpu::WorkgroupGrid {image.width / workgroupSize.x, image.height / workgroupSize.y, 1};
+    // };
 
-    auto originalSSD = CpuEngine::ssd(sourceImage, targetImage);
+    // auto originalSSD = CpuEngine::ssd(sourceImage, targetImage);
 
-    std::vector<float> ssdHistory;
-    std::vector<float> transformationTimeHistory;
-    std::vector<float> gradientXTimeHistory;
-    std::vector<float> gradientYTimeHistory;
-    std::vector<float> updateParamsTimeHistory;
+    // std::vector<float> ssdHistory;
+    // std::vector<float> transformationTimeHistory;
+    // std::vector<float> gradientXTimeHistory;
+    // std::vector<float> gradientYTimeHistory;
+    // std::vector<float> updateParamsTimeHistory;
 
-    for (int i = 0; i < maxIterations; i++) {
-        uniforms.cosAngle = std::cos(transformationParams.angle);
-        uniforms.sinAngle = std::sin(transformationParams.angle);
-        uniforms.translationX = transformationParams.translationX;
-        uniforms.translationY = transformationParams.translationY;
-        context.writeToBuffer(uniformsBuffer, &uniforms);
-        // Reset output parameters to zero
-        outputParameters = {};
-        context.writeToBuffer(parametersOutputBuffer, outputParameters.data());
+    // for (int i = 0; i < maxIterations; i++) {
+    //     uniforms.cosAngle = std::cos(transformationParams.angle);
+    //     uniforms.sinAngle = std::sin(transformationParams.angle);
+    //     uniforms.translationX = transformationParams.translationX;
+    //     uniforms.translationY = transformationParams.translationY;
+    //     context.writeToBuffer(uniformsBuffer, &uniforms);
+    //     // Reset output parameters to zero
+    //     outputParameters = {};
+    //     context.writeToBuffer(parametersOutputBuffer, outputParameters.data());
 
-        context.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
-        context.dispatchOperation(gradientXOp, calcWorkgroupGrid(sourceImage, workgroupSize));
-        context.dispatchOperation(gradientYOp, calcWorkgroupGrid(sourceImage, workgroupSize));
-        context.dispatchOperation(updateParamsOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+    //     context.dispatchOperation(transformOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+    //     context.dispatchOperation(gradientXOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+    //     context.dispatchOperation(gradientYOp, calcWorkgroupGrid(sourceImage, workgroupSize));
+    //     context.dispatchOperation(updateParamsOp, calcWorkgroupGrid(sourceImage, workgroupSize));
 
-        // Check how long the updateParamsOp takes
-        struct TimeStamp {
-            uint64_t start = 0;
-            uint64_t end = 0;
-        };
+    //     // Check how long the updateParamsOp takes
+    //     struct TimeStamp {
+    //         uint64_t start = 0;
+    //         uint64_t end = 0;
+    //     };
 
-        TimeStamp updateParamsDuration;
-        TimeStamp transformationDuration;
-        TimeStamp gradientXDuration;
-        TimeStamp gradientYDuration;
+    //     TimeStamp updateParamsDuration;
+    //     TimeStamp transformationDuration;
+    //     TimeStamp gradientXDuration;
+    //     TimeStamp gradientYDuration;
 
-        const std::vector<std::pair<gpu::DataBuffer*, void*>> bufferMappingPairs = {
-            { &parametersOutputBuffer, outputParameters.data()},
-            { &updateParamsOp.timestampResolveBuffer, &updateParamsDuration},
-            { &transformOp.timestampResolveBuffer, &transformationDuration},
-            { &gradientXOp.timestampResolveBuffer, &gradientXDuration},
-            { &gradientYOp.timestampResolveBuffer, &gradientYDuration}
-        };
+    //     const std::vector<std::pair<gpu::DataBuffer*, void*>> bufferMappingPairs = {
+    //         { &parametersOutputBuffer, outputParameters.data()},
+    //         { &updateParamsOp.timestampResolveBuffer, &updateParamsDuration},
+    //         { &transformOp.timestampResolveBuffer, &transformationDuration},
+    //         { &gradientXOp.timestampResolveBuffer, &gradientXDuration},
+    //         { &gradientYOp.timestampResolveBuffer, &gradientYDuration}
+    //     };
 
-        context.downloadBuffers(bufferMappingPairs);
+    //     context.downloadBuffers(bufferMappingPairs);
 
-        updateParamsTimeHistory.push_back((updateParamsDuration.end - updateParamsDuration.start) / 1e6);
-        transformationTimeHistory.push_back((transformationDuration.end - transformationDuration.start) / 1e6);
-        gradientXTimeHistory.push_back((gradientXDuration.end - gradientXDuration.start) / 1e6);
-        gradientXTimeHistory.push_back((gradientYDuration.end - gradientYDuration.start) / 1e6);
+    //     updateParamsTimeHistory.push_back((updateParamsDuration.end - updateParamsDuration.start) / 1e6);
+    //     transformationTimeHistory.push_back((transformationDuration.end - transformationDuration.start) / 1e6);
+    //     gradientXTimeHistory.push_back((gradientXDuration.end - gradientXDuration.start) / 1e6);
+    //     gradientXTimeHistory.push_back((gradientYDuration.end - gradientYDuration.start) / 1e6);
 
-        // Data on the GPU is output as u32 because WebGPU does not support f32 atomics
-        // So we need to bitcast the data to float
-        const float dssd_dtheta = reinterpret_cast<float*>(outputParameters.data())[0];
-        const float dssd_dtx = reinterpret_cast<float*>(outputParameters.data())[1];
-        const float dssd_dty = reinterpret_cast<float*>(outputParameters.data())[2];
-        const float ssd = reinterpret_cast<float*>(outputParameters.data())[3];
+    //     // Data on the GPU is output as u32 because WebGPU does not support f32 atomics
+    //     // So we need to bitcast the data to float
+    //     const float dssd_dtheta = reinterpret_cast<float*>(outputParameters.data())[0];
+    //     const float dssd_dtx = reinterpret_cast<float*>(outputParameters.data())[1];
+    //     const float dssd_dty = reinterpret_cast<float*>(outputParameters.data())[2];
+    //     const float ssd = reinterpret_cast<float*>(outputParameters.data())[3];
 
-        if (ssd < minSSD) {
-            minSSD = ssd;
-            minAngle = transformationParams.angle;
-            minTx = transformationParams.translationX;
-            minTy = transformationParams.translationY;
-        }
+    //     if (ssd < minSSD) {
+    //         minSSD = ssd;
+    //         minAngle = transformationParams.angle;
+    //         minTx = transformationParams.translationX;
+    //         minTy = transformationParams.translationY;
+    //     }
 
-        // Update parameters using Adam optimizer
-        auto newParameters = optimizer.step({ dssd_dtheta, dssd_dtx, dssd_dty });
-        transformationParams.angle = newParameters[0].value;
-        transformationParams.translationX = newParameters[1].value;
-        transformationParams.translationY = newParameters[2].value;
+    //     // Update parameters using Adam optimizer
+    //     auto newParameters = optimizer.step({ dssd_dtheta, dssd_dtx, dssd_dty });
+    //     transformationParams.angle = newParameters[0].value;
+    //     transformationParams.translationX = newParameters[1].value;
+    //     transformationParams.translationY = newParameters[2].value;
 
-        spdlog::info("Iteration {} SSD: {}", i, ssd);
-        spdlog::info("Angle: {}", transformationParams.angle);
-        spdlog::info("Tx: {}", transformationParams.translationX);
-        spdlog::info("Ty: {}", transformationParams.translationY);
-        spdlog::info("dssd_dtheta: {}", dssd_dtheta);
-        spdlog::info("dssd_dtx: {}", dssd_dtx);
-        spdlog::info("dssd_dty: {}", dssd_dty);
+    //     spdlog::info("Iteration {} SSD: {}", i, ssd);
+    //     spdlog::info("Angle: {}", transformationParams.angle);
+    //     spdlog::info("Tx: {}", transformationParams.translationX);
+    //     spdlog::info("Ty: {}", transformationParams.translationY);
+    //     spdlog::info("dssd_dtheta: {}", dssd_dtheta);
+    //     spdlog::info("dssd_dtx: {}", dssd_dtx);
+    //     spdlog::info("dssd_dty: {}", dssd_dty);
 
-        ssdHistory.push_back(ssd);
+    //     ssdHistory.push_back(ssd);
 
-        if (i > 20) {
-            auto averageSSD = std::accumulate(ssdHistory.begin() + i - 20, ssdHistory.begin() + i, 0.0F) / 20;
-            if (std::abs(ssd - averageSSD) < 1e-3) {
-                spdlog::info("No improvement in last 20 iterations. Stopping.");
-                break;
-            }
-        }
+    //     if (i > 20) {
+    //         auto averageSSD = std::accumulate(ssdHistory.begin() + i - 20, ssdHistory.begin() + i, 0.0F) / 20;
+    //         if (std::abs(ssd - averageSSD) < 1e-3) {
+    //             spdlog::info("No improvement in last 20 iterations. Stopping.");
+    //             break;
+    //         }
+    //     }
 
-        if(ssd < originalSSD * 1e-4) {
-            spdlog::info("Converged");
-            break;
-        }
-        spdlog::info("------------------------------------------------- \n");
-    }
+    //     if(ssd < originalSSD * 1e-4) {
+    //         spdlog::info("Converged");
+    //         break;
+    //     }
+    //     spdlog::info("------------------------------------------------- \n");
+    // }
 
-    spdlog::info("Transformation shader took: {}ms", sumVector(transformationTimeHistory));
-    spdlog::info("GradientX shader took: {}ms", sumVector(gradientXTimeHistory));
-    spdlog::info("GradientY shader took: {}ms", sumVector(gradientYTimeHistory));
-    spdlog::info("UpdateParams shader took: {}ms", sumVector(updateParamsTimeHistory));
+    // spdlog::info("Transformation shader took: {}ms", sumVector(transformationTimeHistory));
+    // spdlog::info("GradientX shader took: {}ms", sumVector(gradientXTimeHistory));
+    // spdlog::info("GradientY shader took: {}ms", sumVector(gradientYTimeHistory));
+    // spdlog::info("UpdateParams shader took: {}ms", sumVector(updateParamsTimeHistory));
 
-    matplot::plot(ssdHistory);
-    matplot::title("SSD History");
-    matplot::xlabel("Iterations");
-    matplot::ylabel("SSD");
-    matplot::show();
+    // matplot::plot(ssdHistory);
+    // matplot::title("SSD History");
+    // matplot::xlabel("Iterations");
+    // matplot::ylabel("SSD");
+    // matplot::show();
 
-    spdlog::info("Minimum SSD: {}", minSSD);
-    spdlog::info("Minimum angle: {} vs Target Angle: {}", minAngle, Utils::degreesToRadians(targetAngle));
-    spdlog::info("Minimum tx: {} vs Target tx: {}", minTx, targetTx);
-    spdlog::info("Minimum ty: {} vs Target ty: {}", minTy, targetTy);
+    // spdlog::info("Minimum SSD: {}", minSSD);
+    // spdlog::info("Minimum angle: {} vs Target Angle: {}", minAngle, Utils::degreesToRadians(targetAngle));
+    // spdlog::info("Minimum tx: {} vs Target tx: {}", minTx, targetTx);
+    // spdlog::info("Minimum ty: {} vs Target ty: {}", minTy, targetTy);
 
-    // Save the final transformed image
-    auto finalTransformedImage = context.downloadTexture(movingTexture);
-    const std::filesystem::path outputPath = "result.pgm";
-    Utils::saveToDisk(finalTransformedImage, outputPath);
+    // // Save the final transformed image
+    // auto finalTransformedImage = context.downloadTextureToPgm(movingTexture);
+    // const std::filesystem::path outputPath = "result.pgm";
+    // Utils::saveToDisk(finalTransformedImage, outputPath);
 }

@@ -14,7 +14,7 @@ AdamOptimizer::AdamOptimizer(const std::vector<Parameter>& parameters, float bet
 {
 }
 
-const std::vector<AdamOptimizer::Parameter>& AdamOptimizer::step(const std::vector<float> &gradients)
+const std::vector<AdamOptimizer::Parameter>& AdamOptimizer::step(const std::vector<float> &gradients) {
     ++m_timeStep;
     for(size_t i = 0; i < m_parameters.size(); ++i) {
         m_firstMoments[i] = m_beta1 * m_firstMoments[i] + (1.0F - m_beta1) * gradients[i];

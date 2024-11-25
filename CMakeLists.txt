@@ -1,21 +1,35 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(GPUReg LANGUAGES CXX)
+project(GPUReg LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-add_executable(GPUReg main.cpp
-    adamoptimiser.h
-    adamoptimiser.cpp
-)
+add_executable(GPUReg main.cpp)
 
 add_library(GPURegLib STATIC
+    adamoptimiser.h adamoptimiser.cpp
     gpu.h gpu.cpp
     utils.h utils.cpp
-    image.h
+    image.h image.cpp
+)
+
+add_library(nifti STATIC)
+target_sources(nifti
+    PRIVATE
+        nifti/nifti1_io.c
+        nifti/nifti1_io.h
+        nifti/nifti1_io_version.h
+        nifti/nifti1.h
+        nifti/znzlib.c
+        nifti/znzlib.h
+        nifti/znzlib_version.h
+)
+target_include_directories(nifti
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/nifti
 )
 
 add_subdirectory(testing)
@@ -60,6 +74,7 @@ target_link_libraries(GPURegLib PUBLIC
     webgpu_dawn
     stb-image
     spdlog::spdlog
+    nifti
 )
 
 target_link_libraries(GPUReg PRIVATE GPURegLib matplot)

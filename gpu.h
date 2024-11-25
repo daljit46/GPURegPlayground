@@ -1,18 +1,18 @@
 #pragma once
 
+#include "image.h"
 #include <cstddef>
-#include <optional>
+#include <utility>
 #include <webgpu/webgpu_cpp.h>
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-class CpuImage;
+class PgmImage;
+class NiftiImage;
 
 namespace gpu {
-
-
 enum class ResourceUsage {
     ReadOnly,
     ReadWrite
@@ -24,16 +24,21 @@ enum class TextureFormat {
     RGBA8Unorm
 };
 
-struct TextureSpecification {
+struct TextureSize {
     uint32_t width = 0;
-    uint32_t height = 0;
+    uint32_t height = 1;
+    uint32_t depth = 1;
+};
+
+struct TextureSpecification {
+    TextureSize size = {};
     TextureFormat format = TextureFormat::R8Unorm;
     ResourceUsage usage = ResourceUsage::ReadOnly;
 };
 
 struct Texture {
     wgpu::Texture wgpuHandle;
-    wgpu::Extent3D size;
+    TextureSize size = {};
 };
 
 enum class BufferType {
@@ -61,7 +66,7 @@ struct WorkgroupGrid {
 
 struct ShaderEntry {
     std::string name;
-    std::string entryPoint;
+    std::string entryPoint = "main";
     std::string code;
     WorkgroupSize workgroupSize;
 };
@@ -93,15 +98,16 @@ struct Context {
 
     [[nodiscard]] static Context newContext();
 
-    Texture makeEmptyTexture(const TextureSpecification& spec);
-    Texture makeTextureFromHost(const CpuImage& image);
-    CpuImage downloadTexture(const Texture& buffer);
+    Texture makeEmptyTexture(const TextureSpecification& spec) const;
+    Texture makeTextureFromHostPgm(const PgmImage& image);
+    Texture makeTextureFromHostNifti(const NiftiImage& image);
+    void downloadTexture(const Texture& buffer, void *data);
 
     DataBuffer makeEmptyBuffer(size_t size);
     DataBuffer makeUniformBuffer(const void* data, size_t size);
     void downloadBuffer(const DataBuffer& dataBuffer, void *data);
     void downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs);
-    void writeToBuffer(const DataBuffer& dataBuffer, void* data);
+    void writeToBuffer(const DataBuffer& dataBuffer, void* data) const;
 
     wgpu::ShaderModule makeShaderModule(const std::string& name, const std::string& code);
     wgpu::Sampler makeLinearSampler();
@@ -111,7 +117,6 @@ struct Context {
 
     void updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size);
 
-    using CompletionHandler = std::function<void()>;
     // Completion handler must be alive until the operation is completed
     void waitForAllQueueOperations();
 };
