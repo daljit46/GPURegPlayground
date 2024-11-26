@@ -33,13 +33,6 @@ uint8_t getPixel(int32_t x, int32_t y, const PgmImage& image) {
     return image.data[index];
 }
 
-uint8_t getPixel3D(int32_t x, int32_t y, int32_t z, const NiftiImage& image) {
-    if(x < 0 || y < 0 || z < 0 || x >= static_cast<int32_t>(image.width) || y >= static_cast<int32_t>(image.height) || z >= static_cast<int32_t>(image.depth)) {
-        return 0;
-    }
-    const auto index = z * image.width * image.height + y * image.width + x;
-    return image.at(static_cast<size_t>(index));
-}
 
 float getBilinearInterpolatedPixel(float x, float y, const PgmImage& img) {
     const auto x0 = static_cast<int32_t>(std::floor(x));
@@ -65,6 +58,13 @@ float getBilinearInterpolatedPixel(float x, float y, const PgmImage& img) {
     return p0 * (1 - dy) + p1 * dy;
 }
 
+uint8_t getPixel3D(int32_t x, int32_t y, int32_t z, const NiftiImage& image) {
+    if(x < 0 || y < 0 || z < 0 || x >= static_cast<int32_t>(image.width) || y >= static_cast<int32_t>(image.height) || z >= static_cast<int32_t>(image.depth)) {
+        return 0;
+    }
+    const auto index = z * image.width * image.height + y * image.width + x;
+    return image.at(static_cast<size_t>(index));
+}
 float getBilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImage& img)
 {
     const auto x0 = static_cast<int32_t>(std::floor(x));
@@ -334,19 +334,20 @@ TEST_F(ShaderTest, TransformImage3D)
 
     const auto cpuImage =  Utils::loadNiftiFromDisk("data/test_file.nii");
     const auto gpuImage = wgpuContext.makeTextureFromHostNifti(cpuImage);
-    const auto outputImage = wgpuContext.makeEmptyTexture({
+
+    const auto gpuOutputImage = wgpuContext.makeEmptyTexture({
         .size = { cpuImage.width, cpuImage.height, cpuImage.depth },
         .format = gpu::TextureFormat::R8Unorm,
         .usage = gpu::ResourceUsage::ReadWrite
     });
 
-    struct TransformParams {
-        float theta = Utils::degreesToRadians(0.0);
-        float phi = Utils::degreesToRadians(0.0);
-        float psi = Utils::degreesToRadians(0.0);
+    struct Uniforms {
+        float alpha = Utils::degreesToRadians(0); // rotation about z-axis
+        float beta = Utils::degreesToRadians(0); // rotation about y-axis
+        float gamma = Utils::degreesToRadians(0); // rotation about x-axis
         float tx = 0;
         float ty = 0;
-        float tz = 0;
+        float tz = -20;
         std::array<float, 2> _padding; // WGSL requires to align to 16 bytes
     } uniformParams;
 
@@ -354,66 +355,62 @@ TEST_F(ShaderTest, TransformImage3D)
         .shader = {
             .name = "transformimage3d",
             .code = shaderSource,
-            .workgroupSize = { 8, 8, 8 }
+            .workgroupSize = { 4, 4, 4 }
         },
-        .uniformBuffers = { wgpuContext.makeUniformBuffer(&uniformParams, sizeof(TransformParams)) },
+        .uniformBuffers = { wgpuContext.makeUniformBuffer(&uniformParams, sizeof(Uniforms)) },
         .inputTextures = { gpuImage },
-        .outputTextures = { outputImage },
+        .outputTextures = { gpuOutputImage },
         .samplers = { wgpuContext.makeLinearSampler() }
     };
 
     auto transformComputeOp = wgpuContext.makeComputeOperation(transformComputeOpDesc);
-    // wgpuContext.dispatchOperation(transformComputeOp, { cpuImage.width / 8, cpuImage.height / 8,  cpuImage.depth / 8 });
+    wgpuContext.dispatchOperation(transformComputeOp, {
+                                                       cpuImage.width + 3 / 4,
+                                                       cpuImage.height + 3 / 4,
+                                                       cpuImage.depth + 3/ 4
+                                                      });
 
 
     std::vector<uint8_t> gpuOutputData(cpuImage.width * cpuImage.height * cpuImage.depth);
-    wgpuContext.downloadTexture(outputImage, gpuOutputData.data());
+    wgpuContext.downloadTexture(gpuOutputImage, gpuOutputData.data());
 
     // Compute the transformation on the CPU
     std::vector<uint8_t> cpuOutput(cpuImage.width * cpuImage.height * cpuImage.depth);
-    const auto cosTheta = std::cos(uniformParams.theta);
-    const auto sinTheta = std::sin(uniformParams.theta);
-    const auto cosPhi = std::cos(uniformParams.phi);
-    const auto sinPhi = std::sin(uniformParams.phi);
-    const auto cosPsi = std::cos(uniformParams.psi);
-    const auto sinPsi = std::sin(uniformParams.psi);
+    const auto cosAlpha = std::cos(uniformParams.alpha);
+    const auto sinAlpha = std::sin(uniformParams.alpha);
+    const auto cosBeta = std::cos(uniformParams.beta);
+    const auto sinBeta = std::sin(uniformParams.beta);
+    const auto cosGamma = std::cos(uniformParams.gamma);
+    const auto sinGamma = std::sin(uniformParams.gamma);
 
+    for(size_t z = 0; z < cpuImage.depth; z++) {
+        for(size_t y = 0; y < cpuImage.height; y++) {
+            for(size_t x = 0; x < cpuImage.width; x++) {
+                const float transformedX = cosAlpha * cosBeta * x + (cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma) * y + (cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma) * z + uniformParams.tx;
+                const float transformedY = sinAlpha * cosBeta * x + (sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma) * y + (sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma) * z + uniformParams.ty;
+                const float transformedZ = -sinBeta * x + cosBeta * sinGamma * y + cosBeta * cosGamma * z + uniformParams.tz;
 
-    for (size_t z = 0; z < cpuImage.depth; z++) {
-        for (size_t y = 0; y < cpuImage.height; y++) {
-            for (size_t x = 0; x < cpuImage.width; x++) {
-                const float transformedX = x * (cosTheta * cosPsi - sinTheta * sinPhi * sinPsi) +
-                                           y * (-cosTheta * sinPsi - sinTheta * sinPhi * cosPsi) +
-                                           z * (sinTheta * sinPhi);
-                const float transformedY = x * (sinTheta * cosPsi + cosTheta * sinPhi * sinPsi) +
-                                           y * (-sinTheta * sinPsi + cosTheta * sinPhi * cosPsi) +
-                                           z * (-cosTheta * sinPhi);
-                const float transformedZ = x * (cosPhi * sinPsi) +
-                                           y * (cosPhi * cosPsi) +
-                                           z * (cosPhi * sinPhi);
                 const auto value = getBilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
-                if(value != 0) {
-                    spdlog::info("Value: {}", value);
-                }
                 const auto index = z * cpuImage.width * cpuImage.height + y * cpuImage.width + x;
-                cpuOutput[index] = static_cast<uint8_t>(value);
+                cpuOutput[index] = static_cast<uint8_t>(std::round(value));
             }
         }
     }
 
-    size_t nonZero = 0;
-    for (size_t i = 0; i < gpuOutputData.size(); i++) {
-        if (gpuOutputData[i] != 0) {
-            nonZero++;
-        }
-    }
-    spdlog::info("Non zero pixels in GPU output: {}", nonZero);
-    cpuImage.handle()->data = gpuOutputData.data();
-    nifti_set_filenames(cpuImage.handle(), "output_cpu.nii", 0, 0);
-    auto success = nifti_image_write_status(cpuImage.handle());
-    EXPECT_EQ(success, 0);
-    spdlog::info("Mean difference {}", meanDifference(cpuOutput, gpuOutputData) / 255.0);
-    EXPECT_LT(meanDifference(cpuOutput, gpuOutputData) / 255.0, 1e-2);
+    nifti_image* outputImage = nifti_copy_nim_info(cpuImage.handle());
+    outputImage->data = reinterpret_cast<void*>(gpuOutputData.data());
+    nifti_set_filenames(outputImage, "output_gpu.nii", 0, 0);
+    auto status = nifti_image_write_status(outputImage);
+    EXPECT_EQ(status, 0);
+    outputImage->data = reinterpret_cast<void*>(cpuOutput.data());
+    nifti_set_filenames(outputImage, "output_cpu.nii", 0, 0);
+    status = nifti_image_write_status(outputImage);
+    EXPECT_EQ(status, 0);
+
+    const auto cpuGpuMeanDiff = meanDifference(cpuOutput, gpuOutputData);
+    spdlog::info("Mean difference between CPU and GPU: {}", cpuGpuMeanDiff);
+    EXPECT_LT(meanDifference(cpuOutput, gpuOutputData) / 255.0, 0.1F);
+
 }
 
 

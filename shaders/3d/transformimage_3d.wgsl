@@ -4,9 +4,9 @@ enable chromium_internal_graphite;
 
 // A struct for 3D rigid transform parameters
 struct Parameters {
-    theta: f32,
-    phi: f32,
-    psi: f32,
+    alpha: f32, // rotation around z-axis
+    beta: f32,  // rotation around y-axis
+    gamma: f32, // rotation around x-axis
     tx: f32,
     ty: f32,
     tz: f32
@@ -18,6 +18,7 @@ struct Parameters {
 @group(0) @binding(2) var outputTexture: texture_storage_3d<r8unorm, write>;
 @group(0) @binding(3) var linearSampler: sampler;
 
+
 @compute @workgroup_size({{workgroup_size}})
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dim = vec3<f32>(textureDimensions(inputTexture, 0));
@@ -27,22 +28,26 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    // WebGPU uses column-major matrices
-    let cosTheta = cos(params.theta);
-    let sinTheta = sin(params.theta);
-    let cosPhi = cos(params.phi);
-    let sinPhi = sin(params.phi);
-    let cosPsi = cos(params.psi);
-    let sinPsi = sin(params.psi);
+    let cosAlpha = cos(params.alpha);
+    let sinAlpha = sin(params.alpha);
+    let cosBeta = cos(params.beta);
+    let sinBeta = sin(params.beta);
+    let cosGamma = cos(params.gamma);
+    let sinGamma = sin(params.gamma);
 
+    // WebGPU uses column-major matrices
     let mat = mat3x3<f32>(
-        cosTheta * cosPhi, cosTheta * sinPhi * sinPsi - sinTheta * cosPsi, cosTheta * sinPhi * cosPsi + sinTheta * sinPsi,
-        sinTheta * cosPhi, sinTheta * sinPhi * sinPsi + cosTheta * cosPsi, sinTheta * sinPhi * cosPsi - cosTheta * sinPsi,
-        -sinPhi, cosPhi * sinPsi, cosPhi * cosPsi
+        cosAlpha * cosBeta, sinAlpha * cosBeta, -sinBeta,
+        cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma, sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma, cosBeta * sinGamma,
+        cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma, sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma, cosBeta * cosGamma
     );
 
     let transformed = mat * coords + vec3<f32>(params.tx, params.ty, params.tz);
-
-    let color = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0);
-    textureStore(outputTexture, id.xyz, vec4<f32>(color.r, 1.0, 0.0, 1.0));   
+    if(transformed.x < 0.0 || transformed.y < 0.0 || transformed.z < 0.0) {
+        textureStore(outputTexture, id.xyz, vec4<f32>(0.0, 0.0, 0.0, 1.0));
+    }
+    else {
+        let color = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0);
+        textureStore(outputTexture, id.xyz, vec4<f32>(color.r, 0.0, 0.0, 0.0));
+    }
 }
