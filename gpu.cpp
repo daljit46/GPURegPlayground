@@ -106,6 +106,7 @@ wgpu::TextureFormat convertFormatToWGPU(TextureFormat format)
 
 Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth, const uint8_t* data, Context &context, const wgpu::TextureUsage& additionalFlags = {})
 {
+    assert(width * height * depth > 0);
     wgpu::TextureDescriptor descriptor;
     descriptor.dimension = depth > 1U ? wgpu::TextureDimension::e3D : wgpu::TextureDimension::e2D;
     descriptor.format = wgpu::TextureFormat::R8Unorm;
@@ -116,6 +117,7 @@ Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth
     descriptor.usage = (
         wgpu::TextureUsage::TextureBinding | // to read texture in shaders
         wgpu::TextureUsage::CopyDst | // to be used as destination in copy operations
+        wgpu::TextureUsage::CopySrc | // to be used as source in copy operations
         additionalFlags
     );
 
@@ -131,10 +133,11 @@ Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth
     const wgpu::TextureDataLayout dataLayout {
         .nextInChain = nullptr,
         .offset = 0,
-        .bytesPerRow = width,
-        .rowsPerImage = height
+        .bytesPerRow = width, // one row of pixels is width bytes
+        .rowsPerImage = height // one slice of pixels is height rows
     };
 
+    // WriteTexture doesn't require bytesPerRow to be a multiple of 256
     queue.WriteTexture(&copyTexture,
                        data,
                        width * height * depth,
@@ -297,7 +300,7 @@ void Context::downloadTexture(const Texture &texture, void *data)
     const wgpu::ImageCopyBuffer copyBuffer {
         .layout = wgpu::TextureDataLayout{
             .offset = 0,
-            .bytesPerRow = paddedBytesPerRow(texture.size.width, pixelSize),
+            .bytesPerRow = stride,
             .rowsPerImage = texture.size.height
         },
         .buffer = outputBuffer
@@ -354,10 +357,13 @@ void Context::downloadTexture(const Texture &texture, void *data)
     instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
 
     uint8_t* dataPtr = reinterpret_cast<uint8_t*>(data);
+
+    uint64_t nonZeroBytes = 0;
     for(uint32_t z = 0; z < texture.size.depth; ++z) {
         for(uint32_t y = 0; y < texture.size.height; ++y) {
             const auto rowStart = mapResult.data + z * texture.size.height * stride + y * stride;
             std::memcpy(dataPtr, rowStart, texture.size.width * pixelSize);
+            dataPtr += texture.size.width * pixelSize;
         }
     }
 
