@@ -29,6 +29,9 @@ uint8_t *NiftiImage::data() const
 
 uint8_t NiftiImage::at(size_t index) const
 {
+    if (index >= width * height * depth) {
+        throw std::out_of_range("Index out of range");
+    }
     auto *data = static_cast<uint8_t*>(m_handle->data);
     return data[index];
 }
