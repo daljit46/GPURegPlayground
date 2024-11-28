@@ -1,7 +1,6 @@
 #include "utils.h"
 #include "nifti1_io.h"
 #include "spdlog/spdlog.h"
-#include <bits/basic_string.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -45,6 +44,9 @@ PgmImage Utils::loadFromDisk(const std::filesystem::path &imagePath)
 
 NiftiImage Utils::loadNiftiFromDisk(const std::filesystem::path &imagePath)
 {
+    if(!std::filesystem::exists(imagePath)) {
+        throw std::runtime_error("Image file not found: "s + imagePath.string());
+    }
     nifti_image *image = nifti_image_read(imagePath.string().c_str(), 1);
     if(image == nullptr) {
         throw std::runtime_error("Failed to load NIfTI image: "s + imagePath.string());

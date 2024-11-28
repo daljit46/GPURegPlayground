@@ -47,7 +47,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         textureStore(outputTexture, id.xyz, vec4<f32>(0.0, 0.0, 0.0, 1.0));
     }
     else {
-        let color = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0);
+        // let color = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0);
+        let color = textureLoad(inputTexture, vec3<i32>(transformed), 0);
         textureStore(outputTexture, id.xyz, vec4<f32>(color.r, 0.0, 0.0, 0.0));
     }
 }

@@ -152,6 +152,18 @@ Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth
 
 }
 
+WorkgroupGrid WorkgroupGrid::ForOneWorkUnitPerThread(uint32_t totalWorksizeX,
+                                                     uint32_t totalWorksizeY,
+                                                     uint32_t totalWorksizeZ,
+                                                     const WorkgroupSize &workgroupSize)
+{
+    const auto x = (totalWorksizeX + workgroupSize.x - 1) / workgroupSize.x;
+    const auto y = (totalWorksizeY + workgroupSize.y - 1) / workgroupSize.y;
+    const auto z = (totalWorksizeZ + workgroupSize.z - 1) / workgroupSize.z;
+
+    return WorkgroupGrid { .x = x, .y = y, .z = z };
+}
+
 Context Context::newContext()
 {
     using namespace std::string_literals;
@@ -398,20 +410,20 @@ wgpu::ShaderModule Context::makeShaderModule(const std::string &name, const std:
     return device.CreateShaderModule(&descriptor);
 }
 
-ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor &operationDescriptor)
+Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor)
 {
     // Create BindGroupLayout with all input and output buffers
     std::vector<wgpu::BindGroupLayoutEntry> layoutEntries;
     std::vector<wgpu::BindGroupEntry> bindGroupEntries;
-    layoutEntries.reserve(operationDescriptor.inputTextures.size() +
-                          operationDescriptor.inputBuffers.size() +
-                          operationDescriptor.outputTextures.size() +
-                          operationDescriptor.outputBuffers.size()
+    layoutEntries.reserve(kernelDescriptor.inputTextures.size() +
+                          kernelDescriptor.inputBuffers.size() +
+                          kernelDescriptor.outputTextures.size() +
+                          kernelDescriptor.outputBuffers.size()
                           );
 
     uint8_t bindingIndex = 0;
 
-    for(const auto &uniformBufferPtr : operationDescriptor.uniformBuffers) {
+    for(const auto &uniformBufferPtr : kernelDescriptor.uniformBuffers) {
         const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -428,7 +440,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto& buffer: operationDescriptor.inputBuffers) {
+    for(const auto& buffer: kernelDescriptor.inputBuffers) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -444,7 +456,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto& texture : operationDescriptor.inputTextures) {
+    for(const auto& texture : kernelDescriptor.inputTextures) {
         const wgpu::BindGroupLayoutEntry layoutEntry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -462,7 +474,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto& buffer: operationDescriptor.outputBuffers) {
+    for(const auto& buffer: kernelDescriptor.outputBuffers) {
         const wgpu::BindGroupLayoutEntry entry{
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -478,7 +490,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto& outputTexture: operationDescriptor.outputTextures) {
+    for(const auto& outputTexture: kernelDescriptor.outputTextures) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -498,7 +510,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    for(const auto &sampler : operationDescriptor.samplers) {
+    for(const auto &sampler : kernelDescriptor.samplers) {
         const wgpu::BindGroupLayoutEntry entry {
             .binding = bindingIndex++,
             .visibility = wgpu::ShaderStage::Compute,
@@ -514,7 +526,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         bindGroupEntries.push_back(bindGroupEntry);
     }
 
-    const auto layoutDescLabel = operationDescriptor.shader.name + " layout descriptor";
+    const auto layoutDescLabel = kernelDescriptor.shader.name + " layout descriptor";
     const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor {
         .label = layoutDescLabel.c_str(),
         .entryCount = layoutEntries.size(),
@@ -531,17 +543,17 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
     };
     const wgpu::PipelineLayout pipelineLayout = device.CreatePipelineLayout(&pipelineLayoutDescriptor);
 
-    const std::string workgroupSizeStr = std::to_string(operationDescriptor.shader.workgroupSize.x) + ", " +
-                                         std::to_string(operationDescriptor.shader.workgroupSize.y) + ", " +
-                                         std::to_string(operationDescriptor.shader.workgroupSize.z);
-    const auto shaderCode = Utils::replacePlaceholder(operationDescriptor.shader.code, "workgroup_size", workgroupSizeStr);
-    const auto computePipelineLabel = operationDescriptor.shader.name + " compute pipeline";
+    const std::string workgroupSizeStr = std::to_string(kernelDescriptor.shader.workgroupSize.x) + ", " +
+                                         std::to_string(kernelDescriptor.shader.workgroupSize.y) + ", " +
+                                         std::to_string(kernelDescriptor.shader.workgroupSize.z);
+    const auto shaderCode = Utils::replacePlaceholder(kernelDescriptor.shader.code, "workgroup_size", workgroupSizeStr);
+    const auto computePipelineLabel = kernelDescriptor.shader.name + " compute pipeline";
     const wgpu::ComputePipelineDescriptor computePipelineDescriptor {
         .label = computePipelineLabel.c_str(),
         .layout = pipelineLayout,
         .compute = wgpu::ProgrammableStageDescriptor {
-            .module = makeShaderModule(operationDescriptor.shader.name, shaderCode),
-            .entryPoint = operationDescriptor.shader.entryPoint.c_str()
+            .module = makeShaderModule(kernelDescriptor.shader.name, shaderCode),
+            .entryPoint = kernelDescriptor.shader.entryPoint.c_str()
         },
     };
 
@@ -563,7 +575,7 @@ ComputeOperation Context::makeComputeOperation(const ComputeOperationDescriptor 
         .entries = bindGroupEntries.data()
     };
 
-    return ComputeOperation {
+    return Kernel {
         .pipeline = device.CreateComputePipeline(&computePipelineDescriptor),
         .bindGroup = device.CreateBindGroup(&bindGroupDescriptor),
         .timestampResolveBuffer = DataBuffer {
@@ -693,8 +705,8 @@ void Context::writeToBuffer(const DataBuffer &dataBuffer,void *data) const
     device.GetQueue().WriteBuffer(dataBuffer.wgpuHandle, 0, data, dataBuffer.size);
 }
 
-void Context::dispatchOperation(const ComputeOperation& operation,
-                                WorkgroupGrid workgroupDimensions)
+void Context::dispatchKernel(const Kernel& kernel,
+                             WorkgroupGrid workgroupDimensions)
 {
     const wgpu::QuerySetDescriptor querySetDesc {
         .type = wgpu::QueryType::Timestamp,
@@ -707,18 +719,18 @@ void Context::dispatchOperation(const ComputeOperation& operation,
         .endOfPassWriteIndex = 1
     };
     const wgpu::ComputePassDescriptor passDescriptor {
-        .label = operation.name.c_str(),
+        .label = kernel.name.c_str(),
         .timestampWrites = &timestampWrites,
     };
     wgpu::CommandEncoder const encoder = device.CreateCommandEncoder();
     wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&passDescriptor);
-    pass.SetPipeline(operation.pipeline);
-    pass.SetBindGroup(0, operation.bindGroup);
+    pass.SetPipeline(kernel.pipeline);
+    pass.SetBindGroup(0, kernel.bindGroup);
     pass.DispatchWorkgroups(workgroupDimensions.x, workgroupDimensions.y, workgroupDimensions.z);
     pass.End();
 
 
-    encoder.ResolveQuerySet(querySet, 0, 2, operation.timestampResolveBuffer.wgpuHandle, 0);
+    encoder.ResolveQuerySet(querySet, 0, 2, kernel.timestampResolveBuffer.wgpuHandle, 0);
     auto commands = encoder.Finish();
     auto queue = device.GetQueue();
     queue.Submit(1, &commands);
@@ -726,15 +738,13 @@ void Context::dispatchOperation(const ComputeOperation& operation,
 
 wgpu::Sampler Context::makeLinearSampler()
 {
-    wgpu::SamplerDescriptor descriptor {};
-    descriptor.minFilter = wgpu::FilterMode::Linear;
-    descriptor.magFilter = wgpu::FilterMode::Linear;
-    descriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-    descriptor.addressModeU = wgpu::AddressMode::Undefined;
-    descriptor.addressModeV = wgpu::AddressMode::Undefined;
-    descriptor.addressModeW = wgpu::AddressMode::Undefined;
-    descriptor.lodMinClamp = 0.0F;
-    descriptor.lodMaxClamp = 0.0F;
+    const wgpu::SamplerDescriptor descriptor {
+        .magFilter = wgpu::FilterMode::Linear,
+        .minFilter = wgpu::FilterMode::Linear,
+        .mipmapFilter = wgpu::MipmapFilterMode::Linear,
+        .maxAnisotropy = 1
+    };
+
 
     return device.CreateSampler(&descriptor);
 }

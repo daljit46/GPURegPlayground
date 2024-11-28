@@ -11,7 +11,6 @@ struct PgmImage {
     std::vector<uint8_t> data;
 };
 
-
 struct NiftiImage {
     uint32_t width = 0;
     uint32_t height = 1;
@@ -25,6 +24,7 @@ struct NiftiImage {
     ~NiftiImage();
 
     uint8_t *data() const;
+    uint8_t at(size_t x, size_t y, size_t z) const;
     uint8_t at(size_t index) const;
 
     nifti_image* handle() const { return m_handle; }

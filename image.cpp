@@ -27,6 +27,11 @@ uint8_t *NiftiImage::data() const
     return static_cast<uint8_t*>(m_handle->data);
 }
 
+uint8_t NiftiImage::at(size_t x, size_t y, size_t z) const
+{
+    return at(x + y * width + z * width * height);
+}
+
 uint8_t NiftiImage::at(size_t index) const
 {
     if (index >= width * height * depth) {

@@ -7,13 +7,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-add_executable(GPUReg main.cpp)
+add_executable(GPUReg main_3d.cpp
+    )
 
 add_library(GPURegLib STATIC
     adamoptimiser.h adamoptimiser.cpp
     gpu.h gpu.cpp
     utils.h utils.cpp
     image.h image.cpp
+    transform.h transform.cpp
 )
 
 add_library(nifti STATIC)

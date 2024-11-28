@@ -142,7 +142,7 @@ TEST_F(ShaderTest, GradientX)
     const auto gpuImage = wgpuContext.makeTextureFromHostPgm(cpuImage);
     const auto outputBuffer = wgpuContext.makeEmptyBuffer(cpuImage.width * cpuImage.height * sizeof(float));
 
-    const gpu::ComputeOperationDescriptor gradientComputeOpDesc {
+    const gpu::KernelDescriptor gradientKernelDesc {
         .shader = {
             .name = "gradientx",
             .entryPoint = "computeSobelX",
@@ -153,9 +153,9 @@ TEST_F(ShaderTest, GradientX)
         .outputBuffers = { outputBuffer }
     };
 
-    auto gradientComputeOp = wgpuContext.makeComputeOperation(gradientComputeOpDesc);
+    auto gradientKernel = wgpuContext.makeKernel(gradientKernelDesc);
 
-    wgpuContext.dispatchOperation(gradientComputeOp,
+    wgpuContext.dispatchKernel(gradientKernel,
                                   {
                                       cpuImage.width / 16,
                                       cpuImage.height / 16,
@@ -205,7 +205,7 @@ TEST_F(ShaderTest, GradientY)
     const auto gpuImage = wgpuContext.makeTextureFromHostPgm(cpuImage);
     const auto outputBuffer = wgpuContext.makeEmptyBuffer(cpuImage.width * cpuImage.height * sizeof(float));
 
-    const gpu::ComputeOperationDescriptor gradientComputeOpDesc {
+    const gpu::KernelDescriptor gradientKernelDesc {
         .shader = {
             .name = "gradienty",
             .entryPoint = "computeSobelY",
@@ -216,9 +216,9 @@ TEST_F(ShaderTest, GradientY)
         .outputBuffers = { outputBuffer }
     };
 
-    auto gradientComputeOp = wgpuContext.makeComputeOperation(gradientComputeOpDesc);
+    auto gradientKernel = wgpuContext.makeKernel(gradientKernelDesc);
 
-    wgpuContext.dispatchOperation(gradientComputeOp,
+    wgpuContext.dispatchKernel(gradientKernel,
                                   {
                                       cpuImage.width / 16,
                                       cpuImage.height / 16,
@@ -277,7 +277,7 @@ TEST_F(ShaderTest, TransformImage)
         float _padding = 0.0F; // WGSL requires to align to 16 bytes
     } uniformParams;
 
-    const gpu::ComputeOperationDescriptor transformComputeOpDesc {
+    const gpu::KernelDescriptor transformKernelDesc {
         .shader = {
             .name = "transformimage",
             .entryPoint = "computeTransform",
@@ -290,8 +290,8 @@ TEST_F(ShaderTest, TransformImage)
         .samplers = { wgpuContext.makeLinearSampler() }
     };
 
-    auto transformComputeOp = wgpuContext.makeComputeOperation(transformComputeOpDesc);
-    wgpuContext.dispatchOperation(transformComputeOp, { cpuImage.width / 16, cpuImage.height / 16, 1 });
+    auto transformKernel = wgpuContext.makeKernel(transformKernelDesc);
+    wgpuContext.dispatchKernel(transformKernel, { cpuImage.width / 16, cpuImage.height / 16, 1 });
 
     PgmImage gpuOutputImage {
         .width = cpuImage.width,
@@ -351,7 +351,7 @@ TEST_F(ShaderTest, TransformImage3D)
         std::array<float, 2> _padding; // WGSL requires to align to 16 bytes
     } uniformParams;
 
-    const gpu::ComputeOperationDescriptor transformComputeOpDesc {
+    const gpu::KernelDescriptor transformKernelDesc {
         .shader = {
             .name = "transformimage3d",
             .code = shaderSource,
@@ -363,8 +363,8 @@ TEST_F(ShaderTest, TransformImage3D)
         .samplers = { wgpuContext.makeLinearSampler() }
     };
 
-    auto transformComputeOp = wgpuContext.makeComputeOperation(transformComputeOpDesc);
-    wgpuContext.dispatchOperation(transformComputeOp, {
+    auto transformKernel = wgpuContext.makeKernel(transformKernelDesc);
+    wgpuContext.dispatchKernel(transformKernel, {
                                                        cpuImage.width + 3 / 4,
                                                        cpuImage.height + 3 / 4,
                                                        cpuImage.depth + 3/ 4
@@ -392,7 +392,7 @@ TEST_F(ShaderTest, TransformImage3D)
 
                 const auto value = getBilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
                 const auto index = z * cpuImage.width * cpuImage.height + y * cpuImage.width + x;
-                cpuOutput[index] = static_cast<uint8_t>(std::round(value));
+                cpuOutput[index] = static_cast<uint8_t>(value);
             }
         }
     }
@@ -421,13 +421,12 @@ TEST_F(ShaderTest, Reduction)
     std::generate(data.begin(), data.end(), []() { return rand() % 10; });
 
     const auto inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(int32_t));
-    wgpuContext.writeToBuffer(inputBuffer, data.data());
-
     const auto outputBuffer = wgpuContext.makeEmptyBuffer(sizeof(int32_t));
+    wgpuContext.writeToBuffer(inputBuffer, data.data());
 
     const auto shaderSource = Utils::readFile("shaders/reduction.wgsl");
 
-    const gpu::ComputeOperationDescriptor reductionComputeOpDesc {
+    const gpu::KernelDescriptor reductionKernelDesc {
         .shader = {
             .name = "reduction",
             .entryPoint = "main",
@@ -438,8 +437,8 @@ TEST_F(ShaderTest, Reduction)
         .outputBuffers = { outputBuffer }
     };
 
-    auto reductionComputeOp = wgpuContext.makeComputeOperation(reductionComputeOpDesc);
-    wgpuContext.dispatchOperation(reductionComputeOp, { static_cast<uint32_t>(data.size() + 255 / 256), 1, 1 });
+    auto reductionKernel = wgpuContext.makeKernel(reductionKernelDesc);
+    wgpuContext.dispatchKernel(reductionKernel, { static_cast<uint32_t>(data.size() + 255 / 256), 1, 1 });
 
     int32_t gpuResult;
     wgpuContext.downloadBuffer(outputBuffer, &gpuResult);
@@ -467,7 +466,7 @@ TEST_F(ShaderTest, ReductionFloat)
 
     const auto shaderSource = Utils::readFile("shaders/reduction_f32.wgsl");
 
-    const gpu::ComputeOperationDescriptor reductionComputeOpDesc {
+    const gpu::KernelDescriptor reductionKernelDesc {
         .shader = {
             .name = "reduction_float",
             .entryPoint = "main",
@@ -478,8 +477,8 @@ TEST_F(ShaderTest, ReductionFloat)
         .outputBuffers = { outputBuffer }
     };
 
-    auto reductionComputeOp = wgpuContext.makeComputeOperation(reductionComputeOpDesc);
-    wgpuContext.dispatchOperation(reductionComputeOp, { static_cast<uint32_t>(data.size() + 255 / 256), 1, 1 });
+    auto reductionKernel = wgpuContext.makeKernel(reductionKernelDesc);
+    wgpuContext.dispatchKernel(reductionKernel, { static_cast<uint32_t>(data.size() + 255 / 256), 1, 1 });
 
     float gpuResult;
     wgpuContext.downloadBuffer(outputBuffer, &gpuResult);
@@ -505,7 +504,7 @@ TEST_F(ShaderTest, Downsample)
     });
 
     const auto shaderSource = Utils::readFile("shaders/downsample.wgsl");
-    const gpu::ComputeOperationDescriptor downsampleOpDesc {
+    const gpu::KernelDescriptor downsampleOpDesc {
         .shader = {
             .name = "downsampling",
             .entryPoint = "main",
@@ -516,8 +515,8 @@ TEST_F(ShaderTest, Downsample)
         .outputTextures = { outputTexture }
     };
 
-    auto downsampleOp = wgpuContext.makeComputeOperation(downsampleOpDesc);
-    wgpuContext.dispatchOperation(downsampleOp, { brainImage.width + 31 / 32, brainImage.height + 31 / 32, 1 });
+    auto downsampleOp = wgpuContext.makeKernel(downsampleOpDesc);
+    wgpuContext.dispatchKernel(downsampleOp, { brainImage.width + 31 / 32, brainImage.height + 31 / 32, 1 });
 
     // Perform the downsampling on the CPU for comparison
     std::vector<uint8_t> cpuOutput(brainImage.width / 2 * brainImage.height / 2);
