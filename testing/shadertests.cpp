@@ -342,9 +342,9 @@ TEST_F(ShaderTest, TransformImage3D)
     });
 
     struct Uniforms {
-        float alpha = Utils::degreesToRadians(0); // rotation about z-axis
-        float beta = Utils::degreesToRadians(0); // rotation about y-axis
-        float gamma = Utils::degreesToRadians(0); // rotation about x-axis
+        float alpha = Utils::degreesToRadians(0.0); // rotation about z-axis
+        float beta = Utils::degreesToRadians(0.0); // rotation about y-axis
+        float gamma = Utils::degreesToRadians(0.0); // rotation about x-axis
         float tx = 0;
         float ty = 0;
         float tz = -20;
