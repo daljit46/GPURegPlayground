@@ -3,7 +3,9 @@
 #include <stdexcept>
 
 
-NiftiImage::NiftiImage(nifti_image *handle) : m_handle(handle)
+NiftiImage::NiftiImage(nifti_image *handle, Ownership ownership) :
+    m_handle(handle),
+    m_ownership(ownership)
 {
     switch (handle->datatype) {
     case DT_UINT8:
@@ -19,7 +21,9 @@ NiftiImage::NiftiImage(nifti_image *handle) : m_handle(handle)
 
 NiftiImage::~NiftiImage()
 {
-    nifti_image_free(m_handle);
+    if (m_ownership == Ownership::Owner) {
+        nifti_image_free(m_handle);
+    }
 }
 
 uint8_t *NiftiImage::data() const
