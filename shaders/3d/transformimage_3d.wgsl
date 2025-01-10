@@ -49,8 +49,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         textureStore(outputTexture, id.xyz, vec4<f32>(0.0, 0.0, 0.0, 1.0));
     }
     else {
-        // let color = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0);
-        let color = textureLoad(inputTexture, vec3<i32>(transformed), 0);
+        // By default, GPU normalized texture coordinates (0.0, 0.0, 0.0) correspond
+        // to the "lowest" edge (corner) of the first texel/voxel, and (1.0, 1.0, 1.0)
+        //  corresponds to the far edge after the last texel.
+        // This means that a coordinate like 0.0 samples exactly on the boundary at
+        // the start of the volume, and 1.0 samples the boundary beyond the last voxel.
+        let voxelCenterOffset = vec3<f32>(0.5, 0.5, 0.5);
+        let color = textureSampleLevel(inputTexture, linearSampler, (transformed  + voxelCenterOffset)/ dim, 0);
+        // let color = textureLoad(inputTexture, vec3<i32>(transformed), 0);
         textureStore(outputTexture, id.xyz, vec4<f32>(color.r, 0.0, 0.0, 0.0));
     }
 }
