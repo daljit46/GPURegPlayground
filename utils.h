@@ -11,6 +11,7 @@ PgmImage loadFromDisk(const std::filesystem::path &imagePath);
 NiftiImage loadNiftiFromDisk(const std::filesystem::path &imagePath);
 
 void saveToDisk(const PgmImage &image, const std::filesystem::path &imagePath);
+void saveToDisk(const NiftiImage &image, const std::filesystem::path &imagePath);
 
 enum ReadFileMode {
     Text,

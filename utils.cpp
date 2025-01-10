@@ -115,3 +115,18 @@ std::string Utils::replacePlaceholder(std::string_view str, std::string_view pla
 }
 
 
+
+void Utils::saveToDisk(const NiftiImage &image, const std::filesystem::path &imagePath)
+{
+    if(imagePath.empty()) {
+        throw std::runtime_error("Empty file path");
+    }
+
+    nifti_image* outputImage = nifti_copy_nim_info(image.handle());
+    outputImage->data = image.data();
+    nifti_set_filenames(outputImage, imagePath.string().c_str(), 0, 0);
+    auto success = nifti_image_write_status(outputImage);
+    if(success != 0) {
+        throw std::runtime_error("Failed to write NIfTI image: "s + imagePath.string());
+    }
+}
