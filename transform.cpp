@@ -1,6 +1,6 @@
 #include "transform.h"
 
-float getBilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImage& img)
+float getTrilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImage& img)
 {
     const auto x0 = static_cast<int32_t>(std::floor(x));
     const auto x1 = x0 + 1;
@@ -62,9 +62,9 @@ NiftiImage transformNifti(const NiftiImage &cpuImage, const NiftiTransformParams
                 const float transformedZ = -sinBeta * x + cosBeta * sinGamma * y
                                            + cosBeta * cosGamma * z + params.tz;
 
-                const auto value = getBilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
+                const auto value = getTrilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
                 const auto index = z * cpuImage.width * cpuImage.height + y * cpuImage.width + x;
-                transformedData[index] = static_cast<uint8_t>(value);
+                transformedData[index] = static_cast<uint8_t>(std::round(value));
             }
         }
     }
