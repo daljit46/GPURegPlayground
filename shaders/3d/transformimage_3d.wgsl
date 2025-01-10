@@ -43,7 +43,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     );
 
     let transformed = mat * coords + vec3<f32>(params.tx, params.ty, params.tz);
-    if(transformed.x < 0.0 || transformed.y < 0.0 || transformed.z < 0.0) {
+    if(transformed.x < 0.0 || transformed.y < 0.0 || transformed.z < 0.0
+        || transformed.x >= dim.x || transformed.y >= dim.y || transformed.z >= dim.z
+    ) {
         textureStore(outputTexture, id.xyz, vec4<f32>(0.0, 0.0, 0.0, 1.0));
     }
     else {
