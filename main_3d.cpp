@@ -6,71 +6,98 @@
 #include "transform.h"
 #include <matplot/matplot.h>
 
+class ScopedTimer {
+public:
+    ScopedTimer(const std::string &name)
+        : m_name(name), m_start(std::chrono::high_resolution_clock::now()) {}
 
-int main()
+    ~ScopedTimer() {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - m_start);
+        spdlog::info("{} took {} ms", m_name, duration.count());
+    }
+private:
+    std::string m_name;
+    std::chrono::time_point<std::chrono::high_resolution_clock> m_start;
+};
+
+struct TransformationParameters {
+    float alpha = Utils::degreesToRadians(0.0F);
+    float beta = 0.0F;
+    float gamma = 0.0F;
+    float tx = 0.0F;
+    float ty = 0.0F;
+    float tz = 0.0F;
+    std::array<float, 2> _padding; // WebGPU requires 16 byte alignment
+};
+
+gpu::Texture downsample3DTexture(
+    gpu::Context &context,
+    const gpu::Texture &inputTexture,
+    const gpu::WorkgroupSize &workgroupSize)
 {
-    auto context = gpu::Context::newContext();
-    const float targetAlpha = Utils::degreesToRadians(10.0F);
-    const float targetBeta = 0.1F;
-    const float targetGamma = 0.3F;
-    const float targetTx = 10.0F;
-    const float targetTy = 13.0F;
-    const float targetTz = 4.0F;
-
-    // Print target values
-    spdlog::info("Target Alpha: {}", targetAlpha);
-    spdlog::info("Target Beta: {}", targetBeta);
-    spdlog::info("Target Gamma: {}", targetGamma);
-    spdlog::info("Target Tx: {}", targetTx);
-    spdlog::info("Target Ty: {}", targetTy);
-    spdlog::info("Target Tz: {}", targetTz);
-
-    const NiftiImage sourceImage = Utils::loadNiftiFromDisk("data/test_file.nii");
-    const NiftiImage targetImage = transformNifti(sourceImage,{
-       targetAlpha, targetBeta, targetGamma, targetTx, targetTy, targetTz
-    });
-
-    Utils::saveToDisk(targetImage, "target.nii");
-
-    const gpu::Texture sourceTexture = context.makeTextureFromHostNifti(sourceImage);;
-    const gpu::Texture targetTexture = context.makeTextureFromHostNifti(targetImage);
-    const gpu::Texture movingTexture = context.makeEmptyTexture ({
-        .size = {sourceImage.width, sourceImage.height, sourceImage.depth},
+    gpu::Texture outputTexture = context.makeEmptyTexture({
+        .size = { inputTexture.size.width / 2,
+                 inputTexture.size.height / 2,
+                 inputTexture.size.depth / 2 },
         .format = gpu::TextureFormat::R8Unorm,
         .usage = gpu::ResourceUsage::ReadWrite
     });
 
-    int64_t nonZeroSource = 0;
-    int64_t nonZeroTarget = 0;
-    for(size_t z = 0; z < sourceImage.depth; z++) {
-        for(size_t y = 0; y < sourceImage.height; y++) {
-            for(size_t x = 0; x < sourceImage.width; x++) {
-                if(sourceImage.at(x, y, z) != 0) {
-                    nonZeroSource++;
-                }
-                if(targetImage.at(x, y, z) != 0) {
-                    nonZeroTarget++;
-                }
-            }
-        }
-    }
-    spdlog::info("Non-zero voxels in source image: {}", nonZeroSource);
-    spdlog::info("Non-zero voxels in target image: {}", nonZeroTarget);
+    gpu::KernelDescriptor downsampleDesc {
+        .shader = {
+            .name = "downsample_3d",
+            .entryPoint = "main",
+            .code = Utils::readFile("shaders/3d/downsample_3d.wgsl"),
+            .workgroupSize = workgroupSize
+        },
+        .uniformBuffers = {},
+        .inputTextures = { inputTexture },
+        .outputTextures = { outputTexture },
+        .samplers = { context.makeLinearSampler() }
+    };
 
+    auto downsampleKernel = context.makeKernel(downsampleDesc);
 
-    struct TransformationParameters {
-        float alpha = Utils::degreesToRadians(0.0F);
-        float beta = 0.0F;
-        float gamma = 0.0F;
-        float tx = 0.0F;
-        float ty = 0.0F;
-        float tz = 0.0F;
-        std::array<float, 2> _padding; // WebGPU requires 16 byte alignment
-    } transformationParams;
+    // Dispatch threads for the new (half-sized) volume
+    const gpu::WorkgroupGrid grid {
+        .x = (outputTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
+        .y = (outputTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
+        .z = (outputTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
+    };
 
-    auto uniformsBuffer = context.makeUniformBuffer(&transformationParams, sizeof(TransformationParameters));
+    context.dispatchKernel(downsampleKernel, grid);
+    return outputTexture;
+}
 
-    const gpu::WorkgroupSize workgroupSize = {4, 4, 4};
+struct SingleLevelResult {
+    float finalSSD;
+    std::vector<float> ssdHistory;
+    // Final transform parameters for chaining to the next level
+    float alpha, beta, gamma, tx, ty, tz;
+};
+
+SingleLevelResult registerAtSingleResolution(
+    gpu::Context &context,
+    const gpu::Texture &sourceTexture,
+    const gpu::Texture &targetTexture,
+    TransformationParameters &transformationParams,
+    const gpu::WorkgroupSize &workgroupSize,
+    int maxIterations,
+    AdamOptimizer &optimizer)
+{
+    // Create an empty "moving" texture matching sourceTexture dimension
+    gpu::Texture movingTexture = context.makeEmptyTexture({
+        .size = sourceTexture.size,
+        .format = gpu::TextureFormat::R8Unorm,
+        .usage = gpu::ResourceUsage::ReadWrite
+    });
+
+    // Uniform buffer holding the transform parameters
+    auto uniformsBuffer = context.makeUniformBuffer(
+        &transformationParams,
+        sizeof(TransformationParameters)
+        );
 
     const gpu::KernelDescriptor transformDesc {
         .shader = {
@@ -80,19 +107,19 @@ int main()
             .workgroupSize = workgroupSize
         },
         .uniformBuffers = {uniformsBuffer},
-        .inputTextures = {sourceTexture},
+        .inputTextures  = {sourceTexture},
         .outputTextures = {movingTexture},
-        .samplers = { context.makeLinearSampler() }
+        .samplers       = { context.makeLinearSampler() }
     };
 
     struct OutputParameters {
-        uint32_t ssd = 0;
-        uint32_t dssd_dalpha = 0;
-        uint32_t dssd_dbeta = 0;
-        uint32_t dssd_dgamma = 0;
-        uint32_t dssd_dtx = 0;
-        uint32_t dssd_dty = 0;
-        uint32_t dssd_dtz = 0;
+        uint32_t ssd          = 0;
+        uint32_t dssd_dalpha  = 0;
+        uint32_t dssd_dbeta   = 0;
+        uint32_t dssd_dgamma  = 0;
+        uint32_t dssd_dtx     = 0;
+        uint32_t dssd_dty     = 0;
+        uint32_t dssd_dtz     = 0;
         uint32_t _padding;
     } outputParams;
 
@@ -107,111 +134,275 @@ int main()
             .workgroupSize = workgroupSize
         },
         .uniformBuffers = {uniformsBuffer},
-        .inputTextures = { targetTexture, movingTexture },
-        .outputBuffers = {paramsBuffer},
-        .samplers = { context.makeLinearSampler() }
+        .inputTextures  = { targetTexture, movingTexture },
+        .outputBuffers  = {paramsBuffer},
+        .samplers       = { context.makeLinearSampler() }
     };
 
     auto transformKernel = context.makeKernel(transformDesc);
-    auto updateParamsOP = context.makeKernel(updateParamsDesc);
-
-    constexpr int maxIterations = 500;
-    const float alphaLearningRate = 1e-4;
-    const float betaLearningRate = 1e-4;
-    const float gammaLearningRate = 1e-4;
-    const float txLearningRate = 1e-1;
-    const float tyLearningRate = 1e-1;
-    const float tzLearningRate = 1e-1;
-
-    std::vector<AdamOptimizer::Parameter> parameters =  {
-        {.value = transformationParams.alpha, .learning_rate = alphaLearningRate },
-        {.value = transformationParams.beta, .learning_rate = betaLearningRate },
-        {.value = transformationParams.gamma, .learning_rate = gammaLearningRate },
-        {.value = transformationParams.tx, .learning_rate = txLearningRate },
-        {.value = transformationParams.ty, .learning_rate = tyLearningRate },
-        {.value = transformationParams.tz, .learning_rate = tzLearningRate }
-    };
-
-    AdamOptimizer optimizer(parameters);
-
-    float minSSD = std::numeric_limits<float>::max();
-    float minAlpha = std::numeric_limits<float>::max();
-    float minBeta = std::numeric_limits<float>::max();
-    float minGamma = std::numeric_limits<float>::max();
-    float minTx = std::numeric_limits<float>::max();
-    float minTy = std::numeric_limits<float>::max();
-    float minTz = std::numeric_limits<float>::max();
+    auto updateParamsOP  = context.makeKernel(updateParamsDesc);
 
     const gpu::WorkgroupGrid workgrid {
-        .x = sourceImage.width + workgroupSize.x - 1 / workgroupSize.x,
-        .y = sourceImage.height + workgroupSize.y - 1 / workgroupSize.y,
-        .z = sourceImage.depth + workgroupSize.y - 1 / workgroupSize.z
+        .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
+        .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
+        .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
     };
 
-    // context.writeToBuffer(uniformsBuffer, &transformationParams);
-    // context.dispatchKernel(transformKernel, workgrid);
-
-    // // Download the transformed image
-    // std::vector<uint8_t> transformedData(sourceImage.width * sourceImage.height * sourceImage.depth);
-    // context.downloadTexture(movingTexture, transformedData.data());
-
-    // nifti_image *transformedNifti = nifti_copy_nim_info(sourceImage.handle());
-    // transformedNifti->data = transformedData.data();
-    // NiftiImage transformedImage(transformedNifti, false);
-    // Utils::saveToDisk(transformedImage, "transformed_gpu.nii");
-
-    // return 0;
+    float minSSD = std::numeric_limits<float>::max();
 
     std::vector<float> ssdHistory;
+    ssdHistory.reserve(maxIterations);
 
-    for(int i = 0; i < maxIterations; ++i) {
+    for (int i = 0; i < maxIterations; ++i) {
         context.writeToBuffer(uniformsBuffer, &transformationParams);
+
         outputParams = {};
         context.writeToBuffer(paramsBuffer, &outputParams);
-
         context.dispatchKernel(transformKernel, workgrid);
         context.dispatchKernel(updateParamsOP, workgrid);
 
         context.downloadBuffer(paramsBuffer, &outputParams);
 
-        const float ssd = reinterpret_cast<float*>(&outputParams.ssd)[0];
-        const float dssd_dalpha = reinterpret_cast<float*>(&outputParams.dssd_dalpha)[0];
-        const float dssd_dbeta = reinterpret_cast<float*>(&outputParams.dssd_dbeta)[0];
-        const float dssd_dgamma = reinterpret_cast<float*>(&outputParams.dssd_dgamma)[0];
-        const float dssd_dtx = reinterpret_cast<float*>(&outputParams.dssd_dtx)[0];
-        const float dssd_dty = reinterpret_cast<float*>(&outputParams.dssd_dty)[0];
-        const float dssd_dtz = reinterpret_cast<float*>(&outputParams.dssd_dtz)[0];
+        // The GPU output parameters are in uint32_t format because WebGPU doesn't support
+        // float32 atomics. We need to reinterpret them as floats.
+        auto uint32ToFloat = [](uint32_t *ptr) -> float {
+            return reinterpret_cast<float*>(ptr)[0];
+        };
+        const float ssd         = uint32ToFloat(&outputParams.ssd);
+        const float dssd_dalpha = uint32ToFloat(&outputParams.dssd_dalpha);
+        const float dssd_dbeta  = uint32ToFloat(&outputParams.dssd_dbeta);
+        const float dssd_dgamma = uint32ToFloat(&outputParams.dssd_dgamma);
+        const float dssd_dtx    = uint32ToFloat(&outputParams.dssd_dtx);
+        const float dssd_dty    = uint32ToFloat(&outputParams.dssd_dty);
+        const float dssd_dtz    = uint32ToFloat(&outputParams.dssd_dtz);
 
-        spdlog::info("SSD: {} dSSD/dAlpha: {} dSSD/dBeta: {} dSSD/dGamma: {} dSSD/dTx: {} dSSD/dTy: {} dSSD/dTz: {}",
-                     ssd, dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz);
+        // Logging
+        spdlog::info(
+            "SSD: {} dAlpha: {} dBeta: {} dGamma: {} dTx: {} dTy: {} dTz: {}",
+            ssd, dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz
+            );
 
-        if(ssd < minSSD) {
+        // Keep track of minimum
+        if (ssd < minSSD) {
             minSSD = ssd;
-            minAlpha = transformationParams.alpha;
-            minBeta = transformationParams.beta;
-            minGamma = transformationParams.gamma;
-            minTx = transformationParams.tx;
-            minTy = transformationParams.ty;
-            minTz = transformationParams.tz;
         }
 
-        auto newParams = optimizer.step({dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz});
+        // Update parameters with Adam
+        auto newParams = optimizer.step({
+            dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz
+        });
+
+        // Set new transformation parameters
         transformationParams.alpha = newParams[0].value;
-        transformationParams.beta = newParams[1].value;
+        transformationParams.beta  = newParams[1].value;
         transformationParams.gamma = newParams[2].value;
-        transformationParams.tx = newParams[3].value;
-        transformationParams.ty = newParams[4].value;
-        transformationParams.tz = newParams[5].value;
+        transformationParams.tx    = newParams[3].value;
+        transformationParams.ty    = newParams[4].value;
+        transformationParams.tz    = newParams[5].value;
 
         ssdHistory.push_back(ssd);
 
-        spdlog::info("Iteration: {} SSD: {} Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}", i, ssd, transformationParams.alpha, transformationParams.beta, transformationParams.gamma, transformationParams.tx, transformationParams.ty, transformationParams.tz);
+        // Print iteration info
+        spdlog::info(
+            "Iteration: {} | SSD: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
+            i,
+            ssd,
+            transformationParams.alpha,
+            transformationParams.beta,
+            transformationParams.gamma,
+            transformationParams.tx,
+            transformationParams.ty,
+            transformationParams.tz
+            );
 
+        // if we see no improvement in the last 20 iterations, break
+        if(i > 10) {
+            auto mean = std::accumulate(ssdHistory.end()-10, ssdHistory.end(), 0.0F) / 10;
+            if (std::abs(ssd - mean) < 0.01) {
+                break;
+            }
+        }
     }
 
-    matplot::plot(ssdHistory);
-    matplot::title("SSD History");
-    matplot::xlabel("Iteration");
-    matplot::ylabel("SSD");
-    matplot::show();
+    // Return final result for chaining
+    SingleLevelResult result;
+    result.finalSSD = minSSD;
+    result.ssdHistory = ssdHistory;
+    result.alpha = transformationParams.alpha;
+    result.beta  = transformationParams.beta;
+    result.gamma = transformationParams.gamma;
+    result.tx    = transformationParams.tx;
+    result.ty    = transformationParams.ty;
+    result.tz    = transformationParams.tz;
+    return result;
+}
+
+
+// ---------------------------------------------------
+// Main
+// ---------------------------------------------------
+int main()
+{
+    ScopedTimer timer ("main");
+    auto context = gpu::Context::newContext();
+
+    // Target transform
+    const float targetAlpha = Utils::degreesToRadians(10.0F);
+    const float targetBeta  = 0.4F;
+    const float targetGamma = -0.3F;
+    const float targetTx    = 10.0F;
+    const float targetTy    = 29.0F;
+    const float targetTz    = -23.0F;
+
+    spdlog::info("Target Alpha: {}", targetAlpha);
+    spdlog::info("Target Beta: {}", targetBeta);
+    spdlog::info("Target Gamma: {}", targetGamma);
+    spdlog::info("Target Tx: {}", targetTx);
+    spdlog::info("Target Ty: {}", targetTy);
+    spdlog::info("Target Tz: {}", targetTz);
+
+    // Load the original images (full resolution)
+    const NiftiImage sourceImage = Utils::loadNiftiFromDisk("/Users/daljitsingh/Documents/Dev/GPURegPlayground/build/Desktop_arm_darwin_generic_mach_o_64bit/data/test_file.nii");
+    const NiftiImage targetImage = transformNifti(sourceImage,
+                                                  { targetAlpha, targetBeta, targetGamma, targetTx, targetTy, targetTz});
+
+    // Save the artificially transformed target
+    // Utils::saveToDisk(targetImage, "target.nii");
+
+    // Convert to GPU textures (full resolution)
+    auto sourceTextureFull = context.makeTextureFromHostNifti(sourceImage);
+    auto targetTextureFull = context.makeTextureFromHostNifti(targetImage);
+
+    // ---------------------------------------------------
+    // Create a 4-level pyramid for source & target
+    // Level 3: full resolution
+    // Level 2: half resolution
+    // Level 1: quarter resolution
+    // Level 0: eighth resolution
+    // ---------------------------------------------------
+    const gpu::WorkgroupSize downsampleWG = {4, 4, 4};
+    auto sourceTextureHalf   = downsample3DTexture(context, sourceTextureFull, downsampleWG);
+    auto targetTextureHalf   = downsample3DTexture(context, targetTextureFull, downsampleWG);
+    auto sourceTextureQuarter = downsample3DTexture(context, sourceTextureHalf,  downsampleWG);
+    auto targetTextureQuarter = downsample3DTexture(context, targetTextureHalf,  downsampleWG);
+    auto sourceTextureEighth = downsample3DTexture(context, sourceTextureQuarter, downsampleWG);
+    auto targetTextureEighth = downsample3DTexture(context, targetTextureQuarter, downsampleWG);
+
+
+    std::vector<gpu::Texture> sourcePyramid { sourceTextureEighth, sourceTextureQuarter, sourceTextureHalf, sourceTextureFull };
+    std::vector<gpu::Texture> targetPyramid { targetTextureEighth, targetTextureQuarter, targetTextureHalf, targetTextureFull };
+
+    // ---------------------------------------------------
+    // Prepare the transformation parameters (start at identity)
+    // ---------------------------------------------------
+    TransformationParameters transformationParams; // all zero by default
+
+    // We'll run the same number of iterations at each level
+    constexpr int maxIterations = 500;
+
+    // For gradient-based approach, set learning rates for angles & translations.
+    // Using max dimension from the *full* resolution
+    const float maxImageDim = std::max(
+        {float(sourceImage.width), float(sourceImage.height), float(sourceImage.depth)}
+        );
+    const float translationLearningRate = 1.0F;
+    const float angleLearningRate       = translationLearningRate / maxImageDim;
+
+    // Setup Adam with 6 parameters
+    std::vector<AdamOptimizer::Parameter> parameters = {
+        {.value = transformationParams.alpha, .learning_rate = angleLearningRate },
+        {.value = transformationParams.beta,  .learning_rate = angleLearningRate },
+        {.value = transformationParams.gamma, .learning_rate = angleLearningRate },
+        {.value = transformationParams.tx,    .learning_rate = translationLearningRate },
+        {.value = transformationParams.ty,    .learning_rate = translationLearningRate },
+        {.value = transformationParams.tz,    .learning_rate = translationLearningRate }
+    };
+    AdamOptimizer optimizer(parameters);
+
+    // We'll store SSD history for final plotting
+    std::vector<float> globalSSDHistory;
+
+    const gpu::WorkgroupSize workgroupSize = {8,8,4};
+
+
+    for (int level = 0; level < 4; ++level)
+    {
+        spdlog::info("\n\n=== Registering at pyramid level {} (0=coarse, 2=full) ===", level);
+
+        // We might want to adjust the learning rates for coarser levels:
+        // e.g., bigger learning rate for coarse, smaller for fine, etc.
+        // For simplicity, we keep them the same in this example.
+
+        // Update transformation parameters in case we up-scaled from previous step
+        parameters[0].value = transformationParams.alpha;
+        parameters[1].value = transformationParams.beta;
+        parameters[2].value = transformationParams.gamma;
+        parameters[3].value = transformationParams.tx;
+        parameters[4].value = transformationParams.ty;
+        parameters[5].value = transformationParams.tz;
+        // Decrease learning rate as we go to up-scaled levels
+        parameters[0].learning_rate = angleLearningRate / std::pow(2, level + 1);
+        parameters[1].learning_rate = angleLearningRate / std::pow(2, level + 1);
+        parameters[2].learning_rate = angleLearningRate / std::pow(2, level + 1);
+        parameters[3].learning_rate = translationLearningRate / std::pow(2, level + 1);
+        parameters[4].learning_rate = translationLearningRate / std::pow(2, level + 1);
+        parameters[5].learning_rate = translationLearningRate / std::pow(2, level + 1);
+
+        optimizer = AdamOptimizer(parameters);
+
+        auto result = registerAtSingleResolution(
+            context,
+            sourcePyramid[level],
+            targetPyramid[level],
+            transformationParams, // updated in place
+            workgroupSize,
+            maxIterations,
+            optimizer
+            );
+
+        globalSSDHistory.insert( globalSSDHistory.end(),
+            result.ssdHistory.begin(),
+            result.ssdHistory.end()
+            );
+
+        // If not yet at the finest level, rescale translation parameters
+        // to the next finer resolution. Rotations remain the same.
+        if (level < 3)
+        {
+            // Because next level is double the dimension of the current,
+            // the translation in voxel-space effectively doubles as well.
+            transformationParams.tx *= 2.0f;
+            transformationParams.ty *= 2.0f;
+            transformationParams.tz *= 2.0f;
+            spdlog::info("Upscaled translation for next level: Tx={}, Ty={}, Tz={}",
+                         transformationParams.tx, transformationParams.ty, transformationParams.tz
+                         );
+        }
+    }
+
+    spdlog::info("Multi-resolution registration done.");
+    spdlog::info("Final parameters:");
+    spdlog::info("  Alpha: {}", transformationParams.alpha);
+    spdlog::info("  Beta:  {}", transformationParams.beta);
+    spdlog::info("  Gamma: {}", transformationParams.gamma);
+    spdlog::info("  Tx:    {}", transformationParams.tx);
+    spdlog::info("  Ty:    {}", transformationParams.ty);
+    spdlog::info("  Tz:    {}", transformationParams.tz);
+
+    spdlog::info("Difference between final transform and target:");
+    spdlog::info("  Alpha: {}", transformationParams.alpha - targetAlpha);
+    spdlog::info("  Beta:  {}", transformationParams.beta - targetBeta);
+    spdlog::info("  Gamma: {}", transformationParams.gamma - targetGamma);
+    spdlog::info("  Tx:    {}", transformationParams.tx - targetTx);
+    spdlog::info("  Ty:    {}", transformationParams.ty - targetTy);
+    spdlog::info("  Tz:    {}", transformationParams.tz - targetTz);
+
+    // Plot the global SSD history
+    // matplot::plot(globalSSDHistory);
+    // matplot::title("SSD History (Multi-Level)");
+    // matplot::xlabel("Iteration");
+    // matplot::ylabel("SSD");
+    // matplot::show();
+
+    return 0;
 }
