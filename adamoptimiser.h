@@ -10,7 +10,7 @@ public:
     };
     AdamOptimizer(
         const std::vector<Parameter>& parameters,
-        float beta1 = 0.8, // higer beta1 means more weight on past gradients
+        float beta1 = 0.7, // higer beta1 means more weight on past gradients
         float beta2 = 0.9999, // higher beta2 means more stable updates
         float epsilon = 1e-8);
 
