@@ -28,6 +28,7 @@ struct Output {
 
 
 const workgroupSize = vec3<u32>({{workgroup_size}});
+const workgroupInvocations = workgroupSize.x * workgroupSize.y * workgroupSize.z;
 
 // WGSL doesn't support atomicAdd for f32, so we use bitcasting to u32
 fn atomicAddF32(sum: ptr<storage, atomic<u32>, read_write>, value: f32) -> f32 {
@@ -42,31 +43,22 @@ fn atomicAddF32(sum: ptr<storage, atomic<u32>, read_write>, value: f32) -> f32 {
     }
 }
 
-fn finiteDiffX(image: texture_3d<f32>, id: vec3<u32>) -> f32 {
-    var sum = 0.0;
-    sum += textureLoad(image, vec3<u32>(id.x + 1u, id.y, id.z), 0).r - textureLoad(image, vec3<u32>(id.x - 1u, id.y, id.z), 0).r;
-    return sum;
+
+fn finiteDiff(image: texture_3d<f32>, id: vec3<u32>) -> vec3<f32> {
+    return vec3<f32>(
+        textureLoad(image, vec3<u32>(id.x + 1u, id.y, id.z), 0).r - textureLoad(image, vec3<u32>(id.x - 1u, id.y, id.z), 0).r,
+        textureLoad(image, vec3<u32>(id.x, id.y + 1u, id.z), 0).r - textureLoad(image, vec3<u32>(id.x, id.y - 1u, id.z), 0).r,
+        textureLoad(image, vec3<u32>(id.x, id.y, id.z + 1u), 0).r - textureLoad(image, vec3<u32>(id.x, id.y, id.z - 1u), 0).r
+    );
 }
 
-fn finiteDiffY(image: texture_3d<f32>, id: vec3<u32>) -> f32 {
-    var sum = 0.0;
-    sum += textureLoad(image, vec3<u32>(id.x, id.y + 1u, id.z), 0).r - textureLoad(image, vec3<u32>(id.x, id.y - 1u, id.z), 0).r;
-    return sum;
-}
-
-fn finiteDiffZ(image: texture_3d<f32>, id: vec3<u32>) -> f32 {
-    var sum = 0.0;
-    sum += textureLoad(image, vec3<u32>(id.x, id.y, id.z + 1u), 0).r - textureLoad(image, vec3<u32>(id.x, id.y, id.z - 1u), 0).r;
-    return sum;
-}
-
-var<workgroup> local_ssd : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
-var<workgroup> local_dssd_dalpha : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
-var<workgroup> local_dssd_dbeta : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
-var<workgroup> local_dssd_dgamma : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
-var<workgroup> local_dssd_dtx : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
-var<workgroup> local_dssd_dty : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
-var<workgroup> local_dssd_dtz : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
+var<workgroup> local_ssd : array<f32, workgroupInvocations>;
+var<workgroup> local_dssd_dalpha : array<f32, workgroupInvocations>;
+var<workgroup> local_dssd_dbeta : array<f32, workgroupInvocations>;
+var<workgroup> local_dssd_dgamma : array<f32, workgroupInvocations>;
+var<workgroup> local_dssd_dtx : array<f32, workgroupInvocations>;
+var<workgroup> local_dssd_dty : array<f32, workgroupInvocations>;
+var<workgroup> local_dssd_dtz : array<f32, workgroupInvocations>;
 
 @compute @workgroup_size(workgroupSize.x, workgroupSize.y, workgroupSize.z)
 fn main(
@@ -87,9 +79,7 @@ fn main(
         local_dssd_dtz[index] = 0.0;
     }
     else {
-        let gradMovingX = finiteDiffX(movingImage, id);
-        let gradMovingY = finiteDiffY(movingImage, id);
-        let gradMovingZ = finiteDiffZ(movingImage, id);
+        let gradMoving = finiteDiff(movingImage, id);
         let targetValue = textureLoad(targetImage, id, 0).r;
         let movingValue = textureLoad(movingImage, id, 0).r;
         let error = movingValue - targetValue;
@@ -129,12 +119,12 @@ fn main(
         let gradXYZbeta = dmatDbeta * vec3<f32>(id.xyz);
         let gradXYZgamma = dmatDgamma * vec3<f32>(id.xyz);
 
-        let gradAlpha = 2 * error * (gradMovingX * gradXYZalpha.x + gradMovingY * gradXYZalpha.y + gradMovingZ * gradXYZalpha.z);
-        let gradBeta = 2 * error * (gradMovingX * gradXYZbeta.x + gradMovingY * gradXYZbeta.y + gradMovingZ * gradXYZbeta.z);
-        let gradGamma = 2 * error * (gradMovingX * gradXYZgamma.x + gradMovingY * gradXYZgamma.y + gradMovingZ * gradXYZgamma.z);
-        let gradTx = 2 * error * gradMovingX;
-        let gradTy = 2 * error * gradMovingY;
-        let gradTz = 2 * error * gradMovingZ;
+        let gradAlpha = 2 * error * (gradMoving.x * gradXYZalpha.x + gradMoving.y * gradXYZalpha.y + gradMoving.z * gradXYZalpha.z);
+        let gradBeta = 2 * error * (gradMoving.x * gradXYZbeta.x + gradMoving.y * gradXYZbeta.y + gradMoving.z * gradXYZbeta.z);
+        let gradGamma = 2 * error * (gradMoving.x * gradXYZgamma.x + gradMoving.y * gradXYZgamma.y + gradMoving.z * gradXYZgamma.z);
+        let gradTx = 2 * error * gradMoving.x;
+        let gradTy = 2 * error * gradMoving.y;
+        let gradTz = 2 * error * gradMoving.z;
 
         local_ssd[index] = error * error;
         local_dssd_dalpha[index] = gradAlpha;
@@ -148,7 +138,7 @@ fn main(
     workgroupBarrier();
 
     // Perform tree based reduction
-    var pairOffset = workgroupSize.x * workgroupSize.y * workgroupSize.z / 2;
+    var pairOffset = workgroupInvocations / 2;
     while(pairOffset > 0u) {
         if(index < pairOffset) {
             local_ssd[index] += local_ssd[index + pairOffset];
