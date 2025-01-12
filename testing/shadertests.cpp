@@ -548,3 +548,55 @@ TEST_F(ShaderTest, Downsample)
 
     EXPECT_LT(meanDifference(cpuOutput, gpuOutputImage.data) / 255.0, 5e-3F);
 }
+
+
+TEST_F(ShaderTest, Downsample3D) {
+    auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
+
+    const auto inputTexture = wgpuContext.makeTextureFromHostNifti(brainImage);
+    const auto outputTexture = wgpuContext.makeEmptyTexture({
+        .size = { brainImage.width / 2, brainImage.height / 2, brainImage.depth / 2 },
+        .format = gpu::TextureFormat::R8Unorm,
+        .usage = gpu::ResourceUsage::ReadWrite
+    });
+
+    const auto shaderSource = Utils::readFile("shaders/3d/downsample_3d.wgsl");
+    const gpu::KernelDescriptor downsampleOpDesc {
+        .shader = {
+            .name = "downsampling3d",
+            .entryPoint = "main",
+            .code = shaderSource,
+            .workgroupSize = { 4, 4, 4 }
+        },
+        .inputTextures = { inputTexture },
+        .outputTextures = { outputTexture }
+    };
+
+    auto downsampleOp = wgpuContext.makeKernel(downsampleOpDesc);
+
+    wgpuContext.dispatchKernel(downsampleOp, { brainImage.width + 1 / 2, brainImage.height + 1 / 2, brainImage.depth + 1 / 2 });
+
+    std::vector<uint8_t> cpuOutput(brainImage.width / 2 * brainImage.height / 2 * brainImage.depth / 2);
+    for(size_t z = 0; z < brainImage.depth / 2; ++z) {
+        for(size_t y = 0; y < brainImage.height / 2; ++y) {
+            for(size_t x = 0; x < brainImage.width / 2; ++x) {
+                uint8_t p000 = getPixel3D(x * 2, y * 2, z * 2, brainImage);
+                uint8_t p001 = getPixel3D(x * 2, y * 2, z * 2 + 1, brainImage);
+                uint8_t p010 = getPixel3D(x * 2, y * 2 + 1, z * 2, brainImage);
+                uint8_t p011 = getPixel3D(x * 2, y * 2 + 1, z * 2 + 1, brainImage);
+                uint8_t p100 = getPixel3D(x * 2 + 1, y * 2, z * 2, brainImage);
+                uint8_t p101 = getPixel3D(x * 2 + 1, y * 2, z * 2 + 1, brainImage);
+                uint8_t p110 = getPixel3D(x * 2 + 1, y * 2 + 1, z * 2, brainImage);
+                uint8_t p111 = getPixel3D(x * 2 + 1, y * 2 + 1, z * 2 + 1, brainImage);
+
+                cpuOutput[z * (brainImage.width / 2) * (brainImage.height / 2) + y * (brainImage.width / 2) + x] =
+                    static_cast<uint8_t>((static_cast<double>(p000) + p001 + p010 + p011 + p100 + p101 + p110 + p111) / 8.0);
+            }
+        }
+    }
+
+    std::vector<uint8_t> gpuOutputData(brainImage.width / 2 * brainImage.height / 2 * brainImage.depth / 2);
+    wgpuContext.downloadTexture(outputTexture, gpuOutputData.data());
+
+    EXPECT_LT(meanDifference(cpuOutput, gpuOutputData) / 255.0, 5e-3F);
+}
