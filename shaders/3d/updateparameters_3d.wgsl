@@ -37,13 +37,7 @@ fn finiteDiff(image: texture_3d<f32>, id: vec3<u32>) -> vec3<f32> {
     );
 }
 
-var<workgroup> local_ssd : array<f32, workgroupInvocations>;
-var<workgroup> local_dssd_dalpha : array<f32, workgroupInvocations>;
-var<workgroup> local_dssd_dbeta : array<f32, workgroupInvocations>;
-var<workgroup> local_dssd_dgamma : array<f32, workgroupInvocations>;
-var<workgroup> local_dssd_dtx : array<f32, workgroupInvocations>;
-var<workgroup> local_dssd_dty : array<f32, workgroupInvocations>;
-var<workgroup> local_dssd_dtz : array<f32, workgroupInvocations>;
+var<workgroup> local_gradients : array<SSDGradients, workgroupInvocations>;
 
 @compute @workgroup_size(workgroupSize.x, workgroupSize.y, workgroupSize.z)
 fn main(
@@ -57,13 +51,7 @@ fn main(
     let dim = vec3<f32>(textureDimensions(targetImage, 0));
 
     if(f32(id.x) >= dim.x || f32(id.y) >= dim.y || f32(id.z) >= dim.z) {
-        local_ssd[index] = 0.0;
-        local_dssd_dalpha[index] = 0.0;
-        local_dssd_dbeta[index] = 0.0;
-        local_dssd_dgamma[index] = 0.0;
-        local_dssd_dtx[index] = 0.0;
-        local_dssd_dty[index] = 0.0;
-        local_dssd_dtz[index] = 0.0;
+        local_gradients[index] = SSDGradients(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     }
     else {
         let gradMoving = finiteDiff(movingImage, id);
@@ -113,13 +101,7 @@ fn main(
         let gradTy = 2 * error * gradMoving.y;
         let gradTz = 2 * error * gradMoving.z;
 
-        local_ssd[index] = error * error;
-        local_dssd_dalpha[index] = gradAlpha;
-        local_dssd_dbeta[index] = gradBeta;
-        local_dssd_dgamma[index] = gradGamma;
-        local_dssd_dtx[index] = gradTx;
-        local_dssd_dty[index] = gradTy;
-        local_dssd_dtz[index] = gradTz;
+        local_gradients[index] = SSDGradients(error * error, gradAlpha, gradBeta, gradGamma, gradTx, gradTy, gradTz);
     }
 
     workgroupBarrier();
@@ -128,13 +110,17 @@ fn main(
     var pairOffset = workgroupInvocations / 2;
     while(pairOffset > 0u) {
         if(index < pairOffset) {
-            local_ssd[index] += local_ssd[index + pairOffset];
-            local_dssd_dalpha[index] += local_dssd_dalpha[index + pairOffset];
-            local_dssd_dbeta[index] += local_dssd_dbeta[index + pairOffset];
-            local_dssd_dgamma[index] += local_dssd_dgamma[index + pairOffset];
-            local_dssd_dtx[index] += local_dssd_dtx[index + pairOffset];
-            local_dssd_dty[index] += local_dssd_dty[index + pairOffset];
-            local_dssd_dtz[index] += local_dssd_dtz[index + pairOffset];
+            let data1 = local_gradients[index];
+            let data2 = local_gradients[index + pairOffset];
+            local_gradients[index] = SSDGradients(
+                data1.ssd + data2.ssd,
+                data1.dssd_dalpha + data2.dssd_dalpha,
+                data1.dssd_dbeta + data2.dssd_dbeta,
+                data1.dssd_dgamma + data2.dssd_dgamma,
+                data1.dssd_dtx + data2.dssd_dtx,
+                data1.dssd_dty + data2.dssd_dty,
+                data1.dssd_dtz + data2.dssd_dtz
+            );
         }
         workgroupBarrier();
         pairOffset /= 2u;
@@ -142,12 +128,13 @@ fn main(
 
     if(index == 0u) {
         let wgIndex = workgroupId.x + workgroupId.y * numWorkgroups.x + workgroupId.z * numWorkgroups.x * numWorkgroups.y;
-        ssdGrads[wgIndex].ssd = local_ssd[0];
-        ssdGrads[wgIndex].dssd_dalpha = local_dssd_dalpha[0];
-        ssdGrads[wgIndex].dssd_dbeta = local_dssd_dbeta[0];
-        ssdGrads[wgIndex].dssd_dgamma = local_dssd_dgamma[0];
-        ssdGrads[wgIndex].dssd_dtx = local_dssd_dtx[0];
-        ssdGrads[wgIndex].dssd_dty = local_dssd_dty[0];
-        ssdGrads[wgIndex].dssd_dtz = local_dssd_dtz[0];
+        let localData = local_gradients[0];
+        ssdGrads[wgIndex].ssd = localData.ssd;
+        ssdGrads[wgIndex].dssd_dalpha = localData.dssd_dalpha;
+        ssdGrads[wgIndex].dssd_dbeta = localData.dssd_dbeta;
+        ssdGrads[wgIndex].dssd_dgamma = localData.dssd_dgamma;
+        ssdGrads[wgIndex].dssd_dtx = localData.dssd_dtx;
+        ssdGrads[wgIndex].dssd_dty = localData.dssd_dty;
+        ssdGrads[wgIndex].dssd_dtz = localData.dssd_dtz;
     }
 }
