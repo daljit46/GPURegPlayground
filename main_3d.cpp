@@ -261,7 +261,7 @@ int main()
     spdlog::info("Target Tz: {}", targetTz);
 
     // Load the original images (full resolution)
-    const NiftiImage sourceImage = Utils::loadNiftiFromDisk("/Users/daljitsingh/Documents/Dev/GPURegPlayground/build/Desktop_arm_darwin_generic_mach_o_64bit/data/test_file.nii");
+    const NiftiImage sourceImage = Utils::loadNiftiFromDisk("data/test_file.nii");
     const NiftiImage targetImage = transformNifti(sourceImage,
                                                   { targetAlpha, targetBeta, targetGamma, targetTx, targetTy, targetTz});
 
