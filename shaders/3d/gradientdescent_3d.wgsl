@@ -2,7 +2,7 @@
 // as a storage format for the output texture
 enable chromium_internal_graphite;
 
-struct Parameters {
+struct TransformationParameters {
     alpha: f32, // rotation around z-axis
     beta: f32,  // rotation around y-axis
     gamma: f32, // rotation around x-axis
@@ -21,7 +21,7 @@ struct SSDGradients {
     dssd_dtz: f32,
 };
 
-@group(0) @binding(0) var<uniform> params: Parameters;
+@group(0) @binding(0) var<uniform> params: TransformationParameters;
 @group(0) @binding(1) var targetImage: texture_3d<f32>;
 @group(0) @binding(2) var movingImage: texture_3d<f32>;
 @group(0) @binding(3) var<storage, read_write> ssdGrads: array<SSDGradients>;
@@ -128,13 +128,6 @@ fn main(
 
     if(index == 0u) {
         let wgIndex = workgroupId.x + workgroupId.y * numWorkgroups.x + workgroupId.z * numWorkgroups.x * numWorkgroups.y;
-        let localData = local_gradients[0];
-        ssdGrads[wgIndex].ssd = localData.ssd;
-        ssdGrads[wgIndex].dssd_dalpha = localData.dssd_dalpha;
-        ssdGrads[wgIndex].dssd_dbeta = localData.dssd_dbeta;
-        ssdGrads[wgIndex].dssd_dgamma = localData.dssd_dgamma;
-        ssdGrads[wgIndex].dssd_dtx = localData.dssd_dtx;
-        ssdGrads[wgIndex].dssd_dty = localData.dssd_dty;
-        ssdGrads[wgIndex].dssd_dtz = localData.dssd_dtz;
+        ssdGrads[wgIndex] = local_gradients[0];
     }
 }
