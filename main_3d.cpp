@@ -338,7 +338,7 @@ int main()
 
     for (int level = 0; level < 4; ++level)
     {
-        spdlog::info("\n\n=== Registering at pyramid level {} (0=coarse, 2=full) ===", level);
+        spdlog::info("\n\n=== Registering at pyramid level {} (0=coarse, 3=full) ===", level);
 
         // We might want to adjust the learning rates for coarser levels:
         // e.g., bigger learning rate for coarse, smaller for fine, etc.
