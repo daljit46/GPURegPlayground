@@ -86,6 +86,12 @@ SingleLevelResult registerAtSingleResolution(
     int maxIterations,
     AdamOptimizer &optimizer)
 {
+    const gpu::WorkgroupGrid workgrid {
+        .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
+        .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
+        .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
+    };
+
     // Create an empty "moving" texture matching sourceTexture dimension
     gpu::Texture movingTexture = context.makeEmptyTexture({
         .size = sourceTexture.size,
@@ -112,19 +118,34 @@ SingleLevelResult registerAtSingleResolution(
         .samplers       = { context.makeLinearSampler() }
     };
 
-    struct OutputParameters {
-        uint32_t ssd          = 0;
-        uint32_t dssd_dalpha  = 0;
-        uint32_t dssd_dbeta   = 0;
-        uint32_t dssd_dgamma  = 0;
-        uint32_t dssd_dtx     = 0;
-        uint32_t dssd_dty     = 0;
-        uint32_t dssd_dtz     = 0;
-        uint32_t _padding;
-    } outputParams;
+    struct SSDGradients {
+        float ssd          = 0;
+        float dssd_dalpha  = 0;
+        float dssd_dbeta   = 0;
+        float dssd_dgamma  = 0;
+        float dssd_dtx     = 0;
+        float dssd_dty     = 0;
+        float dssd_dtz     = 0;
 
-    auto paramsBuffer = context.makeEmptyBuffer(sizeof(OutputParameters));
-    context.writeToBuffer(paramsBuffer, &outputParams);
+        SSDGradients operator+(const SSDGradients &other) const {
+            return {
+                .ssd = ssd + other.ssd,
+                .dssd_dalpha = dssd_dalpha + other.dssd_dalpha,
+                .dssd_dbeta = dssd_dbeta + other.dssd_dbeta,
+                .dssd_dgamma = dssd_dgamma + other.dssd_dgamma,
+                .dssd_dtx = dssd_dtx + other.dssd_dtx,
+                .dssd_dty = dssd_dty + other.dssd_dty,
+                .dssd_dtz = dssd_dtz + other.dssd_dtz
+            };
+        }
+
+    } ssdGradients;
+
+    // Size of array of SSD gradients is the number of workgroups in the grid times size of SSDGradients struct
+    const uint32_t workgroupCount = workgrid.x * workgrid.y * workgrid.z;
+    spdlog::info("Workgroup Count: {}", workgroupCount);
+    const size_t ssdGradientsSize = sizeof(SSDGradients) * workgroupCount;
+    gpu::DataBuffer ssdGradientsBuffer = context.makeEmptyBuffer(ssdGradientsSize);
 
     const gpu::KernelDescriptor updateParamsDesc {
         .shader = {
@@ -133,20 +154,14 @@ SingleLevelResult registerAtSingleResolution(
             .code = Utils::readFile("shaders/3d/updateparameters_3d.wgsl"),
             .workgroupSize = workgroupSize
         },
-        .uniformBuffers = {uniformsBuffer},
+        .uniformBuffers = { uniformsBuffer },
         .inputTextures  = { targetTexture, movingTexture },
-        .outputBuffers  = {paramsBuffer},
+        .outputBuffers  = { ssdGradientsBuffer },
         .samplers       = { context.makeLinearSampler() }
     };
 
     auto transformKernel = context.makeKernel(transformDesc);
     auto updateParamsOP  = context.makeKernel(updateParamsDesc);
-
-    const gpu::WorkgroupGrid workgrid {
-        .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
-        .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
-        .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
-    };
 
     float minSSD = std::numeric_limits<float>::max();
 
@@ -156,29 +171,25 @@ SingleLevelResult registerAtSingleResolution(
     for (int i = 0; i < maxIterations; ++i) {
         context.writeToBuffer(uniformsBuffer, &transformationParams);
 
-        outputParams = {};
-        context.writeToBuffer(paramsBuffer, &outputParams);
+        ssdGradients = {};
         context.dispatchKernel(transformKernel, workgrid);
         context.dispatchKernel(updateParamsOP, workgrid);
 
-        context.downloadBuffer(paramsBuffer, &outputParams);
+        std::vector<SSDGradients> ssdGradientsVec(workgroupCount);
+        context.downloadBuffer(ssdGradientsBuffer, ssdGradientsVec.data());
+        ssdGradients = std::reduce(ssdGradientsVec.begin(), ssdGradientsVec.end(), SSDGradients{});
 
-        // The GPU output parameters are in uint32_t format because WebGPU doesn't support
-        // float32 atomics. We need to reinterpret them as floats.
-        auto uint32ToFloat = [](uint32_t *ptr) -> float {
-            return reinterpret_cast<float*>(ptr)[0];
-        };
-        const float ssd         = uint32ToFloat(&outputParams.ssd);
-        const float dssd_dalpha = uint32ToFloat(&outputParams.dssd_dalpha);
-        const float dssd_dbeta  = uint32ToFloat(&outputParams.dssd_dbeta);
-        const float dssd_dgamma = uint32ToFloat(&outputParams.dssd_dgamma);
-        const float dssd_dtx    = uint32ToFloat(&outputParams.dssd_dtx);
-        const float dssd_dty    = uint32ToFloat(&outputParams.dssd_dty);
-        const float dssd_dtz    = uint32ToFloat(&outputParams.dssd_dtz);
+        const float ssd         = ssdGradients.ssd;
+        const float dssd_dalpha = ssdGradients.dssd_dalpha;
+        const float dssd_dbeta  = ssdGradients.dssd_dbeta;
+        const float dssd_dgamma = ssdGradients.dssd_dgamma;
+        const float dssd_dtx    = ssdGradients.dssd_dtx;
+        const float dssd_dty    = ssdGradients.dssd_dty;
+        const float dssd_dtz    = ssdGradients.dssd_dtz;
 
         // Logging
         spdlog::info(
-            "SSD: {} dAlpha: {} dBeta: {} dGamma: {} dTx: {} dTy: {} dTz: {}",
+            "SSD1: {} dAlpha: {} dBeta: {} dGamma: {} dTx: {} dTy: {} dTz: {}",
             ssd, dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz
             );
 

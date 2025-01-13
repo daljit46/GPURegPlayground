@@ -11,38 +11,23 @@ struct Parameters {
     tz: f32
 };
 
-struct Output {
-    ssd: atomic<u32>,
-    dssd_dalpha: atomic<u32>,
-    dssd_dbeta: atomic<u32>,
-    dssd_dgamma: atomic<u32>,
-    dssd_dtx: atomic<u32>,
-    dssd_dty: atomic<u32>,
-    dssd_dtz: atomic<u32>,
+struct SSDGradients {
+    ssd: f32,
+    dssd_dalpha: f32,
+    dssd_dbeta: f32,
+    dssd_dgamma: f32,
+    dssd_dtx: f32,
+    dssd_dty: f32,
+    dssd_dtz: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: Parameters;
 @group(0) @binding(1) var targetImage: texture_3d<f32>;
 @group(0) @binding(2) var movingImage: texture_3d<f32>;
-@group(0) @binding(3) var<storage, read_write> output: Output;
-
+@group(0) @binding(3) var<storage, read_write> ssdGrads: array<SSDGradients>;
 
 const workgroupSize = vec3<u32>({{workgroup_size}});
 const workgroupInvocations = workgroupSize.x * workgroupSize.y * workgroupSize.z;
-
-// WGSL doesn't support atomicAdd for f32, so we use bitcasting to u32
-fn atomicAddF32(sum: ptr<storage, atomic<u32>, read_write>, value: f32) -> f32 {
-    var old = 0u;
-    loop {
-      let new_value = value + bitcast<f32>(old);
-      let exchange_result = atomicCompareExchangeWeak(sum, old, bitcast<u32>(new_value));
-      if exchange_result.exchanged {
-         return new_value;
-      }
-      old = exchange_result.old_value;
-    }
-}
-
 
 fn finiteDiff(image: texture_3d<f32>, id: vec3<u32>) -> vec3<f32> {
     return vec3<f32>(
@@ -64,6 +49,8 @@ var<workgroup> local_dssd_dtz : array<f32, workgroupInvocations>;
 fn main(
     @builtin(global_invocation_id) id: vec3<u32>,
     @builtin(local_invocation_id) localId: vec3<u32>,
+    @builtin(workgroup_id) workgroupId: vec3<u32>,
+    @builtin(num_workgroups) numWorkgroups: vec3<u32>
 )
 {
     let index = localId.x + localId.y * workgroupSize.x + localId.z * workgroupSize.x * workgroupSize.y;
@@ -154,12 +141,13 @@ fn main(
     }
 
     if(index == 0u) {
-        atomicAddF32(&output.ssd, local_ssd[0]);
-        atomicAddF32(&output.dssd_dalpha, local_dssd_dalpha[0]);
-        atomicAddF32(&output.dssd_dbeta, local_dssd_dbeta[0]);
-        atomicAddF32(&output.dssd_dgamma, local_dssd_dgamma[0]);
-        atomicAddF32(&output.dssd_dtx, local_dssd_dtx[0]);
-        atomicAddF32(&output.dssd_dty, local_dssd_dty[0]);
-        atomicAddF32(&output.dssd_dtz, local_dssd_dtz[0]);
+        let wgIndex = workgroupId.x + workgroupId.y * numWorkgroups.x + workgroupId.z * numWorkgroups.x * numWorkgroups.y;
+        ssdGrads[wgIndex].ssd = local_ssd[0];
+        ssdGrads[wgIndex].dssd_dalpha = local_dssd_dalpha[0];
+        ssdGrads[wgIndex].dssd_dbeta = local_dssd_dbeta[0];
+        ssdGrads[wgIndex].dssd_dgamma = local_dssd_dgamma[0];
+        ssdGrads[wgIndex].dssd_dtx = local_dssd_dtx[0];
+        ssdGrads[wgIndex].dssd_dty = local_dssd_dty[0];
+        ssdGrads[wgIndex].dssd_dtz = local_dssd_dtz[0];
     }
 }
