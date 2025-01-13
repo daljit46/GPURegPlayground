@@ -175,23 +175,19 @@ SingleLevelResult registerAtSingleResolution(
         const float dssd_dty    = ssdGradients.dssd_dty;
         const float dssd_dtz    = ssdGradients.dssd_dtz;
 
-        // Logging
         spdlog::info(
             "SSD1: {} dAlpha: {} dBeta: {} dGamma: {} dTx: {} dTy: {} dTz: {}",
             ssd, dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz
             );
 
-        // Keep track of minimum
         if (ssd < minSSD) {
             minSSD = ssd;
         }
 
-        // Update parameters with Adam
         auto newParams = optimizer.step({
             dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz
         });
 
-        // Set new transformation parameters
         transformationParams.alpha = newParams[0].value;
         transformationParams.beta  = newParams[1].value;
         transformationParams.gamma = newParams[2].value;
@@ -201,7 +197,6 @@ SingleLevelResult registerAtSingleResolution(
 
         ssdHistory.push_back(ssd);
 
-        // Print iteration info
         spdlog::info(
             "Iteration: {} | SSD: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
             i,
@@ -237,9 +232,6 @@ SingleLevelResult registerAtSingleResolution(
 }
 
 
-// ---------------------------------------------------
-// Main
-// ---------------------------------------------------
 int main(int argc, char **argv)
 {
     if (argc > 1 && std::string(argv[1]) == "--trace") {
@@ -263,7 +255,6 @@ int main(int argc, char **argv)
     spdlog::info("Target Ty: {}", targetTy);
     spdlog::info("Target Tz: {}", targetTz);
 
-    // Load the original images (full resolution)
     const NiftiImage sourceImage = Utils::loadNiftiFromDisk("data/test_file.nii");
     const NiftiImage targetImage = transformNifti(sourceImage,
                                                   { targetAlpha, targetBeta, targetGamma, targetTx, targetTy, targetTz});
@@ -271,7 +262,6 @@ int main(int argc, char **argv)
     // Save the artificially transformed target
     // Utils::saveToDisk(targetImage, "target.nii");
 
-    // Convert to GPU textures (full resolution)
     auto sourceTextureFull = context.makeTextureFromHostNifti(sourceImage);
     auto targetTextureFull = context.makeTextureFromHostNifti(targetImage);
 
@@ -294,9 +284,6 @@ int main(int argc, char **argv)
     std::vector<gpu::Texture> sourcePyramid { sourceTextureEighth, sourceTextureQuarter, sourceTextureHalf, sourceTextureFull };
     std::vector<gpu::Texture> targetPyramid { targetTextureEighth, targetTextureQuarter, targetTextureHalf, targetTextureFull };
 
-    // ---------------------------------------------------
-    // Prepare the transformation parameters (start at identity)
-    // ---------------------------------------------------
     TransformationParameters transformationParams; // all zero by default
 
     // We'll run the same number of iterations at each level
@@ -330,10 +317,6 @@ int main(int argc, char **argv)
     for (int level = 0; level < 4; ++level)
     {
         spdlog::info("\n\n=== Registering at pyramid level {} (0=coarse, 3=full) ===", level);
-
-        // We might want to adjust the learning rates for coarser levels:
-        // e.g., bigger learning rate for coarse, smaller for fine, etc.
-        // For simplicity, we keep them the same in this example.
 
         // Update transformation parameters in case we up-scaled from previous step
         parameters[0].value = transformationParams.alpha;
