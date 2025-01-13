@@ -392,11 +392,17 @@ DataBuffer Context::makeEmptyBuffer(size_t size)
         .mappedAtCreation = false
     };
 
-    return DataBuffer {
+    auto buffer = DataBuffer {
         .wgpuHandle = device.CreateBuffer(&desc),
         .usage = ResourceUsage::ReadWrite,
         .size = size
     };
+
+    // Zero out the buffer
+    std::vector<uint8_t> zeroBuffer(size, 0);
+    writeToBuffer(buffer, zeroBuffer.data());
+
+    return buffer;
 }
 
 wgpu::ShaderModule Context::makeShaderModule(const std::string &name, const std::string &code)
