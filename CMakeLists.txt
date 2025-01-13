@@ -15,6 +15,7 @@ add_library(GPURegLib STATIC
     gpu.h gpu.cpp
     utils.h utils.cpp
     image.h image.cpp
+    scopedtimer.h
     transform.h transform.cpp
 )
 
