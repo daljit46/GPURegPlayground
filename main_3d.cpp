@@ -240,8 +240,11 @@ SingleLevelResult registerAtSingleResolution(
 // ---------------------------------------------------
 // Main
 // ---------------------------------------------------
-int main()
+int main(int argc, char **argv)
 {
+    if (argc > 1 && std::string(argv[1]) == "--trace") {
+        spdlog::set_level(spdlog::level::trace);
+    }
     ScopedTimer timer ("main");
     auto context = gpu::Context::newContext();
 
