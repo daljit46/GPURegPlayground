@@ -137,9 +137,9 @@ SingleLevelResult registerAtSingleResolution(
 
     const gpu::KernelDescriptor updateParamsDesc {
         .shader = {
-            .name = "updateparameters",
+            .name = "gradientdescent",
             .entryPoint = "main",
-            .code = Utils::readFile("shaders/3d/updateparameters_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/gradientdescent_3d.wgsl"),
             .workgroupSize = workgroupSize
         },
         .uniformBuffers = { uniformsBuffer },
