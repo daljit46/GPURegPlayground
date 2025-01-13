@@ -1,4 +1,6 @@
 #include "transform.h"
+#include <cmath>
+#include <cstring>
 
 float getTrilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImage& img)
 {
