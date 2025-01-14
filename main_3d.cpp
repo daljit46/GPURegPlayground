@@ -150,6 +150,28 @@ SingleLevelResult registerAtSingleResolution(
         }
 
     } ssdGradients;
+SingleLevelResult registerAtSingleResolution(
+    gpu::Context &context,
+    const gpu::Texture &sourceTexture,
+    const gpu::Texture &targetTexture,
+    TransformationParameters &transformationParams,
+    const gpu::WorkgroupSize &workgroupSize,
+    int maxIterations,
+    AdamOptimizer &optimizer)
+{
+    const gpu::WorkgroupGrid workgrid {
+        .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
+        .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
+        .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
+    };
+
+    // Uniform buffer holding the transform parameters
+    auto uniformsBuffer = context.makeUniformBuffer(
+        &transformationParams,
+        sizeof(TransformationParameters)
+        );
+
+   SSDGradients ssdGradients;
 
     // Size of array of SSD gradients is the number of workgroups in the grid times size of SSDGradients struct
     const uint32_t workgroupCount = workgrid.x * workgrid.y * workgrid.z;
