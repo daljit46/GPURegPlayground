@@ -25,6 +25,7 @@ struct SSDGradients {
 @group(0) @binding(1) var targetImage: texture_3d<f32>;
 @group(0) @binding(2) var movingImage: texture_3d<f32>;
 @group(0) @binding(3) var<storage, read_write> ssdGrads: array<SSDGradients>;
+@group(0) @binding(4) var linearSampler: sampler;
 
 const workgroupSize = vec3<u32>({{workgroup_size}});
 const workgroupInvocations = workgroupSize.x * workgroupSize.y * workgroupSize.z;
@@ -65,13 +66,28 @@ fn main(
         let sinGamma = sin(params.gamma);
         let cosGamma = cos(params.gamma);
 
+        // WebGPU uses column-major matrices
+        let mat = mat3x3<f32>(
+            cosAlpha * cosBeta, sinAlpha * cosBeta, -sinBeta,
+            cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma, sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma, cosBeta * sinGamma,
+            cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma, sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma, cosBeta * cosGamma
+        );
 
-        // Column-major rotation matrix
-        // let mat = mat3x3<f32>(
-        //     cosAlpha * cosBeta, sinAlpha * cosBeta, -sinBeta, // first column
-        //     cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma, sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma, cosBeta * sinGamma,
-        //     cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma, sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma, cosBeta * cosGamma
-        // );
+        let voxelCenter = vec3<f32>(id.xyz) + vec3<f32>(0.5, 0.5, 0.5);
+        let transformed = mat * voxelCenter + vec3<f32>(params.tx, params.ty, params.tz);
+        let movingValue = textureSampleLevel(movingImage, linearSampler, transformed / dim, 0).r;
+        let offset = vec3<f32>(1.0, 0.0, 0.0);
+        let gradMoving = vec3<f32>(
+            textureSampleLevel(movingImage, linearSampler, (transformed + offset) / dim, 0).r -
+            textureSampleLevel(movingImage, linearSampler, (transformed - offset) / dim, 0).r,
+            textureSampleLevel(movingImage, linearSampler, (transformed + offset.yxy) / dim, 0).r -
+            textureSampleLevel(movingImage, linearSampler, (transformed - offset.yxy) / dim, 0).r,
+            textureSampleLevel(movingImage, linearSampler, (transformed + offset.yyx) / dim, 0).r -
+            textureSampleLevel(movingImage, linearSampler, (transformed - offset.yyx) / dim, 0).r
+        )/2.0;
+
+        let error = movingValue - textureLoad(targetImage, id, 0).r;
+
         // x' = column 1 dotted with (x, y, z)
         // we need dx'/dalpha, dx'/dbeta, dx'/dgamma, dy'/dalpha, dy'/dbeta, dy'/dgamma, dz'/dalpha, dz'/dbeta, dz'/dgamma
         let dmatDalpha = mat3x3<f32>(
@@ -90,13 +106,13 @@ fn main(
             -cosAlpha * sinBeta * sinGamma + sinAlpha * cosGamma, -sinAlpha * sinBeta * sinGamma - cosAlpha * cosGamma, -cosBeta * sinGamma
         );
 
-        let gradXYZalpha = dmatDalpha * vec3<f32>(id.xyz);
-        let gradXYZbeta = dmatDbeta * vec3<f32>(id.xyz);
-        let gradXYZgamma = dmatDgamma * vec3<f32>(id.xyz);
+        let gradXYZalpha = dmatDalpha * voxelCenter;
+        let gradXYZbeta = dmatDbeta * voxelCenter;
+        let gradXYZgamma = dmatDgamma * voxelCenter;
 
-        let gradAlpha = 2 * error * (gradMoving.x * gradXYZalpha.x + gradMoving.y * gradXYZalpha.y + gradMoving.z * gradXYZalpha.z);
-        let gradBeta = 2 * error * (gradMoving.x * gradXYZbeta.x + gradMoving.y * gradXYZbeta.y + gradMoving.z * gradXYZbeta.z);
-        let gradGamma = 2 * error * (gradMoving.x * gradXYZgamma.x + gradMoving.y * gradXYZgamma.y + gradMoving.z * gradXYZgamma.z);
+        let gradAlpha = 2 * error * dot(gradMoving, gradXYZalpha);
+        let gradBeta = 2 * error * dot(gradMoving, gradXYZbeta);
+        let gradGamma = 2 * error * dot(gradMoving, gradXYZgamma);
         let gradTx = 2 * error * gradMoving.x;
         let gradTy = 2 * error * gradMoving.y;
         let gradTz = 2 * error * gradMoving.z;
