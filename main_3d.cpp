@@ -165,7 +165,7 @@ SingleLevelResult registerAtSingleResolution(
             .workgroupSize = workgroupSize
         },
         .uniformBuffers = { uniformsBuffer },
-        .inputTextures  = { targetTexture, movingTexture },
+        .inputTextures  = { targetTexture, sourceTexture },
         .outputBuffers  = { ssdGradientsBuffer },
         .samplers       = { context.makeLinearSampler() }
     };
