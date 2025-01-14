@@ -338,7 +338,7 @@ int main(int argc, char **argv)
     const float maxImageDim = std::max(
         {float(sourceImage.width), float(sourceImage.height), float(sourceImage.depth)}
         );
-    const float translationLearningRate = 1.0F;
+    const float translationLearningRate = 2.0;
     const float angleLearningRate       = translationLearningRate / maxImageDim;
 
     // Setup Adam with 6 parameters
