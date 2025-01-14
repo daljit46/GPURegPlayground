@@ -1,3 +1,4 @@
+// NOTE: the total workgroup size of this shader must be 32 <= 2^N <= 1024
 // need to enable the chromium_internal_graphite feature to use r8unorm
 // as a storage format for the output texture
 enable chromium_internal_graphite;
@@ -30,6 +31,25 @@ struct SSDGradients {
 const workgroupSize = vec3<u32>({{workgroup_size}});
 const workgroupInvocations = workgroupSize.x * workgroupSize.y * workgroupSize.z;
 
+var<workgroup> local_gradients : array<SSDGradients, workgroupInvocations>;
+
+fn reduceLocalGradients(index: u32, offset: u32) {
+    if(index < offset) {
+        let data1 = local_gradients[index];
+        let data2 = local_gradients[index + offset];
+        local_gradients[index] = SSDGradients(
+            data1.ssd + data2.ssd,
+            data1.dssd_dalpha + data2.dssd_dalpha,
+            data1.dssd_dbeta + data2.dssd_dbeta,
+            data1.dssd_dgamma + data2.dssd_dgamma,
+            data1.dssd_dtx + data2.dssd_dtx,
+            data1.dssd_dty + data2.dssd_dty,
+            data1.dssd_dtz + data2.dssd_dtz
+        );
+    }
+}
+
+
 fn finiteDiff(image: texture_3d<f32>, id: vec3<u32>) -> vec3<f32> {
     return vec3<f32>(
         textureLoad(image, vec3<u32>(id.x + 1u, id.y, id.z), 0).r - textureLoad(image, vec3<u32>(id.x - 1u, id.y, id.z), 0).r,
@@ -38,7 +58,6 @@ fn finiteDiff(image: texture_3d<f32>, id: vec3<u32>) -> vec3<f32> {
     );
 }
 
-var<workgroup> local_gradients : array<SSDGradients, workgroupInvocations>;
 
 @compute @workgroup_size(workgroupSize.x, workgroupSize.y, workgroupSize.z)
 fn main(
@@ -55,10 +74,6 @@ fn main(
         local_gradients[index] = SSDGradients(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     }
     else {
-        let gradMoving = finiteDiff(movingImage, id);
-        let targetValue = textureLoad(targetImage, id, 0).r;
-        let movingValue = textureLoad(movingImage, id, 0).r;
-        let error = movingValue - targetValue;
         let sinAlpha = sin(params.alpha);
         let cosAlpha = cos(params.alpha);
         let sinBeta = sin(params.beta);
@@ -120,27 +135,24 @@ fn main(
         local_gradients[index] = SSDGradients(error * error, gradAlpha, gradBeta, gradGamma, gradTx, gradTy, gradTz);
     }
 
+
     workgroupBarrier();
 
-    // Perform tree based reduction
-    var pairOffset = workgroupInvocations / 2;
-    while(pairOffset > 0u) {
-        if(index < pairOffset) {
-            let data1 = local_gradients[index];
-            let data2 = local_gradients[index + pairOffset];
-            local_gradients[index] = SSDGradients(
-                data1.ssd + data2.ssd,
-                data1.dssd_dalpha + data2.dssd_dalpha,
-                data1.dssd_dbeta + data2.dssd_dbeta,
-                data1.dssd_dgamma + data2.dssd_dgamma,
-                data1.dssd_dtx + data2.dssd_dtx,
-                data1.dssd_dty + data2.dssd_dty,
-                data1.dssd_dtz + data2.dssd_dtz
-            );
-        }
-        workgroupBarrier();
-        pairOffset /= 2u;
-    }
+    // Perform tree based reduction (unrolled for performance)
+    // Probably could be made faster when subgroups are no longer experimental in WebGPU
+    if(workgroupInvocations >= 1024) { reduceLocalGradients(index, 512); } workgroupBarrier();
+    if(workgroupInvocations >= 512)  { reduceLocalGradients(index, 256); } workgroupBarrier();
+    if(workgroupInvocations >= 256)  { reduceLocalGradients(index, 128); } workgroupBarrier();
+    if(workgroupInvocations >= 128)  { reduceLocalGradients(index, 64);  } workgroupBarrier();
+    // We no longer need to use barries when the index <= 32 because
+    // instructions are SIMD within a wavefront/warp (technically on AMD this limit should be 64)
+    // https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
+    if(workgroupInvocations >= 64) { reduceLocalGradients(index, 32); }
+    if(workgroupInvocations >= 32) { reduceLocalGradients(index, 16); }
+    if(workgroupInvocations >= 16) { reduceLocalGradients(index, 8); }
+    if(workgroupInvocations >= 8)  { reduceLocalGradients(index, 4); }
+    if(workgroupInvocations >= 4)  { reduceLocalGradients(index, 2); }
+    if(workgroupInvocations >= 2)  { reduceLocalGradients(index, 1); }
 
     if(index == 0u) {
         let wgIndex = workgroupId.x + workgroupId.y * numWorkgroups.x + workgroupId.z * numWorkgroups.x * numWorkgroups.y;
