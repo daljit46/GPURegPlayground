@@ -19,6 +19,28 @@ struct TransformationParameters {
     std::array<float, 2> _padding; // WebGPU requires 16 byte alignment
 };
 
+struct SSDGradients {
+    float ssd          = 0;
+    float dssd_dalpha  = 0;
+    float dssd_dbeta   = 0;
+    float dssd_dgamma  = 0;
+    float dssd_dtx     = 0;
+    float dssd_dty     = 0;
+    float dssd_dtz     = 0;
+
+    SSDGradients operator+(const SSDGradients &other) const {
+        return {
+            .ssd = ssd + other.ssd,
+            .dssd_dalpha = dssd_dalpha + other.dssd_dalpha,
+            .dssd_dbeta = dssd_dbeta + other.dssd_dbeta,
+            .dssd_dgamma = dssd_dgamma + other.dssd_dgamma,
+            .dssd_dtx = dssd_dtx + other.dssd_dtx,
+            .dssd_dty = dssd_dty + other.dssd_dty,
+            .dssd_dtz = dssd_dtz + other.dssd_dtz
+        };
+    }
+
+};
 gpu::Texture downsample3DTexture(
     gpu::Context &context,
     const gpu::Texture &inputTexture,
