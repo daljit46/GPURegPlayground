@@ -392,17 +392,23 @@ int main(int argc, char **argv)
     spdlog::info("  Alpha: {}", transformationParams.alpha);
     spdlog::info("  Beta:  {}", transformationParams.beta);
     spdlog::info("  Gamma: {}", transformationParams.gamma);
-    spdlog::info("  Tx:    {}", transformationParams.tx);
-    spdlog::info("  Ty:    {}", transformationParams.ty);
-    spdlog::info("  Tz:    {}", transformationParams.tz);
+    // The transformation of the image is assumed to be wrt the center of the
+    // voxels of the image, so we need to subtract half the voxel size from the
+    // final translation parameters.
+    const auto finalTx = transformationParams.tx - 0.5F;
+    const auto finalTy = transformationParams.ty - 0.5F;
+    const auto finalTz = transformationParams.tz - 0.5F;
+    spdlog::info("  Tx:    {}", finalTx);
+    spdlog::info("  Ty:    {}", finalTy);
+    spdlog::info("  Tz:    {}", finalTz);
 
     spdlog::info("Difference between final transform and target:");
     spdlog::info("  Alpha: {}", transformationParams.alpha - targetAlpha);
     spdlog::info("  Beta:  {}", transformationParams.beta - targetBeta);
     spdlog::info("  Gamma: {}", transformationParams.gamma - targetGamma);
-    spdlog::info("  Tx:    {}", transformationParams.tx - targetTx);
-    spdlog::info("  Ty:    {}", transformationParams.ty - targetTy);
-    spdlog::info("  Tz:    {}", transformationParams.tz - targetTz);
+    spdlog::info("  Tx:    {}", finalTx - targetTx);
+    spdlog::info("  Ty:    {}", finalTy - targetTy);
+    spdlog::info("  Tz:    {}", finalTz - targetTz);
 
     // Plot the global SSD history
     // matplot::plot(globalSSDHistory);
