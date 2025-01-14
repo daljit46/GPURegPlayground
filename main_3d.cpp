@@ -157,7 +157,7 @@ SingleLevelResult registerAtSingleResolution(
     const size_t ssdGradientsSize = sizeof(SSDGradients) * workgroupCount;
     gpu::DataBuffer ssdGradientsBuffer = context.makeEmptyBuffer(ssdGradientsSize);
 
-    const gpu::KernelDescriptor updateParamsDesc {
+    const gpu::KernelDescriptor gradientDescentDesc {
         .shader = {
             .name = "gradientdescent",
             .entryPoint = "main",
@@ -170,7 +170,7 @@ SingleLevelResult registerAtSingleResolution(
         .samplers       = { context.makeLinearSampler() }
     };
 
-    auto transformKernel = context.makeKernel(transformDesc);
+    auto gradientDescentKernel  = context.makeKernel(gradientDescentDesc);
     auto updateParamsOP  = context.makeKernel(updateParamsDesc);
 
     float minSSD = std::numeric_limits<float>::max();
@@ -182,7 +182,7 @@ SingleLevelResult registerAtSingleResolution(
         context.writeToBuffer(uniformsBuffer, &transformationParams);
 
         ssdGradients = {};
-        context.dispatchKernel(transformKernel, workgrid);
+        context.dispatchKernel(gradientDescentKernel, workgrid);
         context.dispatchKernel(updateParamsOP, workgrid);
 
         std::vector<SSDGradients> ssdGradientsVec(workgroupCount);
