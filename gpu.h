@@ -97,11 +97,18 @@ struct KernelDescriptor {
     std::vector<wgpu::Sampler> samplers;
 };
 
+struct Limits {
+    uint32_t maxStoragePerWorkgroup = 0; // in bytes
+    uint32_t maxWorkgroupCountX = 0;
+    uint32_t maxWorkgroupCountY = 0;
+    uint32_t maxWorkgroupCountZ = 0;
+};
 
 struct Context {
     wgpu::Instance instance = nullptr;
     wgpu::Adapter adapter = nullptr;
     wgpu::Device device = nullptr;
+    Limits limits;
 
     [[nodiscard]] static Context newContext();
 

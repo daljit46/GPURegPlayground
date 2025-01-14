@@ -31,9 +31,10 @@ std::string parseAdapterType(wgpu::AdapterType type)
     }
 }
 
-void printAdapterInfo(const wgpu::Adapter& adapter)
+void getAdapterInfo(gpu::Context& context)
 {
     std::cout << "--- Adapter Info ---\n";
+    wgpu::Adapter adapter = context.adapter;
     wgpu::AdapterInfo adapterInfo;
     adapter.GetInfo(&adapterInfo);
 
@@ -79,6 +80,10 @@ void printAdapterInfo(const wgpu::Adapter& adapter)
     spdlog::trace("  maxComputeWorkgroupSizeZ: {}", supportedLimits.limits.maxComputeWorkgroupSizeZ);
     spdlog::trace("  maxComputeWorkgroupsPerDimension: {}", supportedLimits.limits.maxComputeWorkgroupsPerDimension);
     spdlog::trace("\n");
+
+    context.limits.maxStoragePerWorkgroup = supportedLimits.limits.maxComputeWorkgroupStorageSize;
+    context.limits.maxWorkgroupCountX = supportedLimits.limits.maxComputeWorkgroupSizeX;
+    context.limits.maxWorkgroupCountY = supportedLimits.limits.maxComputeWorkgroupSizeY;
 }
 
 wgpu::TextureUsage convertUsageToWGPU(ResourceUsage usage)
@@ -220,7 +225,7 @@ Context Context::newContext()
     };
     const wgpu::RequiredLimits requiredLimits {
         .limits = wgpu::Limits {
-            .maxComputeInvocationsPerWorkgroup = 512
+            .maxComputeInvocationsPerWorkgroup = 512,
         }
     };
     wgpu::DeviceDescriptor deviceDescriptor {};
@@ -251,7 +256,7 @@ Context Context::newContext()
     context.device.SetUncapturedErrorCallback(onDeviceError, nullptr);
     context.device.SetDeviceLostCallback(onDeviceLost, nullptr);
 
-    printAdapterInfo(context.adapter);
+    getAdapterInfo(context);
 
     return context;
 }
