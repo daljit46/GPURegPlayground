@@ -50,19 +50,29 @@ NiftiImage transformNifti(const NiftiImage &cpuImage, const NiftiTransformParams
     const float cosGamma = std::cos(params.gamma);
     const float sinGamma = std::sin(params.gamma);
 
+    const float m00 = cosAlpha * cosBeta;
+    const float m01 = cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma;
+    const float m02 = cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma;
+
+    const float m10 = sinAlpha * cosBeta;
+    const float m11 = sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma;
+    const float m12 = sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma;
+
+    const float m20 = -sinBeta;
+    const float m21 = cosBeta * sinGamma;
+    const float m22 = cosBeta * cosGamma;
+
+
     for(size_t z = 0; z < cpuImage.depth; z++) {
         for(size_t y = 0; y < cpuImage.height; y++) {
             for(size_t x = 0; x < cpuImage.width; x++) {
-                const float transformedX = cosAlpha * cosBeta * x
-                                           + (cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma) * y
-                                           + (cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma) * z
-                                           + params.tx;
-                const float transformedY = sinAlpha * cosBeta * x
-                                           + (sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma) * y
-                                           + (sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma) * z
-                                           + params.ty;
-                const float transformedZ = -sinBeta * x + cosBeta * sinGamma * y
-                                           + cosBeta * cosGamma * z + params.tz;
+                const float centeredX = x + 0.5F;
+                const float centeredY = y + 0.5F;
+                const float centeredZ = z + 0.5F;
+
+                const float transformedX = m00 * centeredX + m01 * centeredY + m02 * centeredZ + params.tx;
+                const float transformedY = m10 * centeredX + m11 * centeredY + m12 * centeredZ + params.ty;
+                const float transformedZ = m20 * centeredX + m21 * centeredY + m22 * centeredZ + params.tz;
 
                 const auto value = getTrilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
                 const auto index = z * cpuImage.width * cpuImage.height + y * cpuImage.width + x;
