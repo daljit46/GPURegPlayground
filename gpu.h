@@ -63,6 +63,7 @@ struct WorkgroupGrid {
     uint32_t y = 1;
     uint32_t z = 1;
 
+    uint32_t totalCount() const { return x * y * z; }
     // Assumes that each thread will process one work unit of the total work size per axis
     static WorkgroupGrid ForOneWorkUnitPerThread(uint32_t totalWorksizeX,
                                                  uint32_t totalWorksizeY,
