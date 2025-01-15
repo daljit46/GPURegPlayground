@@ -87,69 +87,7 @@ struct SingleLevelResult {
     float alpha, beta, gamma, tx, ty, tz;
 };
 
-SingleLevelResult registerAtSingleResolution(
-    gpu::Context &context,
-    const gpu::Texture &sourceTexture,
-    const gpu::Texture &targetTexture,
-    TransformationParameters &transformationParams,
-    const gpu::WorkgroupSize &workgroupSize,
-    int maxIterations,
-    AdamOptimizer &optimizer)
-{
-    const gpu::WorkgroupGrid workgrid {
-        .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
-        .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
-        .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
-    };
 
-    // Create an empty "moving" texture matching sourceTexture dimension
-    gpu::Texture movingTexture = context.makeEmptyTexture({
-        .size = sourceTexture.size,
-        .format = gpu::TextureFormat::R8Unorm,
-        .usage = gpu::ResourceUsage::ReadWrite
-    });
-
-    // Uniform buffer holding the transform parameters
-    auto uniformsBuffer = context.makeUniformBuffer(
-        &transformationParams,
-        sizeof(TransformationParameters)
-        );
-
-    const gpu::KernelDescriptor transformDesc {
-        .shader = {
-            .name = "transform",
-            .entryPoint = "main",
-            .code = Utils::readFile("shaders/3d/transformimage_3d.wgsl"),
-            .workgroupSize = workgroupSize
-        },
-        .uniformBuffers = {uniformsBuffer},
-        .inputTextures  = {sourceTexture},
-        .outputTextures = {movingTexture},
-        .samplers       = { context.makeLinearSampler() }
-    };
-
-    struct SSDGradients {
-        float ssd          = 0;
-        float dssd_dalpha  = 0;
-        float dssd_dbeta   = 0;
-        float dssd_dgamma  = 0;
-        float dssd_dtx     = 0;
-        float dssd_dty     = 0;
-        float dssd_dtz     = 0;
-
-        SSDGradients operator+(const SSDGradients &other) const {
-            return {
-                .ssd = ssd + other.ssd,
-                .dssd_dalpha = dssd_dalpha + other.dssd_dalpha,
-                .dssd_dbeta = dssd_dbeta + other.dssd_dbeta,
-                .dssd_dgamma = dssd_dgamma + other.dssd_dgamma,
-                .dssd_dtx = dssd_dtx + other.dssd_dtx,
-                .dssd_dty = dssd_dty + other.dssd_dty,
-                .dssd_dtz = dssd_dtz + other.dssd_dtz
-            };
-        }
-
-    } ssdGradients;
 SingleLevelResult registerAtSingleResolution(
     gpu::Context &context,
     const gpu::Texture &sourceTexture,
@@ -190,7 +128,6 @@ SingleLevelResult registerAtSingleResolution(
     };
 
     auto gradientDescentKernel  = context.makeKernel(gradientDescentDesc);
-    auto updateParamsOP  = context.makeKernel(updateParamsDesc);
 
     float minSSD = std::numeric_limits<float>::max();
 
@@ -202,7 +139,6 @@ SingleLevelResult registerAtSingleResolution(
 
         ssdGradients = {};
         context.dispatchKernel(gradientDescentKernel, workgrid);
-        context.dispatchKernel(updateParamsOP, workgrid);
 
         std::vector<SSDGradients> ssdGradientsVec(workgroupCount);
         context.downloadBuffer(ssdGradientsBuffer, ssdGradientsVec.data());
