@@ -103,7 +103,6 @@ SingleLevelResult registerAtSingleResolution(
         .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
     };
 
-    // Uniform buffer holding the transform parameters
     auto uniformsBuffer = context.makeUniformBuffer(&transformationParams, sizeof(TransformationParameters));
 
     SSDGradients ssdGradients;
