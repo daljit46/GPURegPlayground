@@ -1,6 +1,8 @@
 #include "transform.h"
+#include "scopedtimer.h"
 #include <cmath>
 #include <cstring>
+#include <thread>
 
 float getTrilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImage& img)
 {
@@ -15,14 +17,20 @@ float getTrilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImag
         return 0.0F;
     }
 
-    const auto p000 = img.at(x0, y0, z0);
-    const auto p001 = img.at(x0, y0, z1);
-    const auto p010 = img.at(x0, y1, z0);
-    const auto p011 = img.at(x0, y1, z1);
-    const auto p100 = img.at(x1, y0, z0);
-    const auto p101 = img.at(x1, y0, z1);
-    const auto p110 = img.at(x1, y1, z0);
-    const auto p111 = img.at(x1, y1, z1);
+    const auto index = [](size_t x, size_t y, size_t z, size_t width, size_t height) -> size_t {
+        return x + y * width + z * width * height;
+    };
+
+    const uint8_t* data = reinterpret_cast<uint8_t*>(img.data());
+
+    const auto p000 = data[index(x0, y0, z0, img.width, img.height)];
+    const auto p001 = data[index(x0, y0, z1, img.width, img.height)];
+    const auto p010 = data[index(x0, y1, z0, img.width, img.height)];
+    const auto p011 = data[index(x0, y1, z1, img.width, img.height)];
+    const auto p100 = data[index(x1, y0, z0, img.width, img.height)];
+    const auto p101 = data[index(x1, y0, z1, img.width, img.height)];
+    const auto p110 = data[index(x1, y1, z0, img.width, img.height)];
+    const auto p111 = data[index(x1, y1, z1, img.width, img.height)];
 
     const auto dx = x - x0;
     const auto dy = y - y0;
@@ -42,11 +50,13 @@ float getTrilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImag
 
 NiftiImage transformNifti(const NiftiImage &cpuImage, const NiftiTransformParams &params)
 {
+    ScopedTimer timer("transformNifti");
     std::vector<uint8_t> transformedData(cpuImage.width * cpuImage.height * cpuImage.depth);
+
     const float cosAlpha = std::cos(params.alpha);
     const float sinAlpha = std::sin(params.alpha);
-    const float cosBeta = std::cos(params.beta);
-    const float sinBeta = std::sin(params.beta);
+    const float cosBeta  = std::cos(params.beta);
+    const float sinBeta  = std::sin(params.beta);
     const float cosGamma = std::cos(params.gamma);
     const float sinGamma = std::sin(params.gamma);
 
@@ -62,24 +72,46 @@ NiftiImage transformNifti(const NiftiImage &cpuImage, const NiftiTransformParams
     const float m21 = cosBeta * sinGamma;
     const float m22 = cosBeta * cosGamma;
 
+    const auto numThreads = std::max(1u, std::thread::hardware_concurrency());
+    const size_t totalSlices = cpuImage.depth;
+    const size_t slicesPerThread = (totalSlices + numThreads - 1) / numThreads; // Ceiling division
 
-    for(size_t z = 0; z < cpuImage.depth; z++) {
-        for(size_t y = 0; y < cpuImage.height; y++) {
-            for(size_t x = 0; x < cpuImage.width; x++) {
-                const float centeredX = x + 0.5F;
-                const float centeredY = y + 0.5F;
-                const float centeredZ = z + 0.5F;
+    const uint8_t* cpuData = reinterpret_cast<const uint8_t*>(cpuImage.data());
 
-                const float transformedX = m00 * centeredX + m01 * centeredY + m02 * centeredZ + params.tx;
-                const float transformedY = m10 * centeredX + m11 * centeredY + m12 * centeredZ + params.ty;
-                const float transformedZ = m20 * centeredX + m21 * centeredY + m22 * centeredZ + params.tz;
+    auto processSlices = [&](size_t startSlice, size_t endSlice) {
+        for (size_t z = startSlice; z < endSlice && z < totalSlices; ++z) {
+            for (size_t y = 0; y < cpuImage.height; y++) {
+                for (size_t x = 0; x < cpuImage.width; x++) {
+                    const float centeredX = x + 0.5F;
+                    const float centeredY = y + 0.5F;
+                    const float centeredZ = z + 0.5F;
 
-                const auto value = getTrilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
-                const auto index = z * cpuImage.width * cpuImage.height + y * cpuImage.width + x;
-                transformedData[index] = static_cast<uint8_t>(std::round(value));
+                    const float transformedX = m00 * centeredX + m01 * centeredY + m02 * centeredZ + params.tx;
+                    const float transformedY = m10 * centeredX + m11 * centeredY + m12 * centeredZ + params.ty;
+                    const float transformedZ = m20 * centeredX + m21 * centeredY + m22 * centeredZ + params.tz;
+
+                    const auto value = getTrilinearInterpolatedPixel3D(transformedX, transformedY, transformedZ, cpuImage);
+
+                    const auto index = z * cpuImage.width * cpuImage.height + y * cpuImage.width + x;
+                    transformedData[index] = static_cast<uint8_t>(std::round(value));
+                }
             }
         }
+    };
+
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < numThreads; ++i) {
+        size_t startSlice = i * slicesPerThread;
+        size_t endSlice = startSlice + slicesPerThread;
+        threads.emplace_back(processSlices, startSlice, endSlice);
     }
+
+    for (auto& th : threads) {
+        if (th.joinable()) {
+            th.join();
+        }
+    }
+
     auto new_nifti = nifti_copy_nim_info(cpuImage.handle());
     void* allocatedData = malloc(transformedData.size());
     std::memcpy(allocatedData, transformedData.data(), transformedData.size());
