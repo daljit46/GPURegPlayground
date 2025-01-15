@@ -21,7 +21,7 @@ float getTrilinearInterpolatedPixel3D(float x, float y, float z, const NiftiImag
         return x + y * width + z * width * height;
     };
 
-    const uint8_t* data = reinterpret_cast<uint8_t*>(img.data());
+    const auto* data = img.data();
 
     const auto p000 = data[index(x0, y0, z0, img.width, img.height)];
     const auto p001 = data[index(x0, y0, z1, img.width, img.height)];
