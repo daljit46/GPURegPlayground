@@ -2,13 +2,17 @@ cmake_minimum_required(VERSION 3.19)
 
 project(GPUReg LANGUAGES C CXX)
 
+if(NOT DEFINED CMAKE_BUILD_TYPE)
+    message(STATUS "Setting build type to 'Release' as none was specified.")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-add_executable(GPUReg main_3d.cpp
-    )
+add_executable(GPUReg main_3d.cpp)
 
 add_library(GPURegLib STATIC
     adamoptimiser.h adamoptimiser.cpp
