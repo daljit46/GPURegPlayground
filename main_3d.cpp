@@ -166,12 +166,9 @@ SingleLevelResult registerAtSingleResolution(
     };
 
     // Uniform buffer holding the transform parameters
-    auto uniformsBuffer = context.makeUniformBuffer(
-        &transformationParams,
-        sizeof(TransformationParameters)
-        );
+    auto uniformsBuffer = context.makeUniformBuffer(&transformationParams, sizeof(TransformationParameters));
 
-   SSDGradients ssdGradients;
+    SSDGradients ssdGradients;
 
     // Size of array of SSD gradients is the number of workgroups in the grid times size of SSDGradients struct
     const uint32_t workgroupCount = workgrid.x * workgrid.y * workgrid.z;
