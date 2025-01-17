@@ -514,8 +514,8 @@ TEST_F(ShaderTest, MultiStageReductionFloat)
         // if not, pad the data with zeros
         else if(originalSize % wgSize.x != 0) {
             const size_t newSize = (originalSize / wgSize.x + 1) * wgSize.x;
-            data.resize((originalSize / wgSize.x + 1) * wgSize.x);
-            std::fill_n(std::back_inserter(data), data.size() - originalSize, 0.0F);
+            data.reserve(newSize);
+            std::fill_n(std::back_inserter(data), newSize - originalSize, 0.0F);
         }
 
         const gpu::DataBuffer inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(float));
