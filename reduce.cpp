@@ -11,7 +11,9 @@
 
 void gpu::floatReduction(const GpuReductionDescriptor &dataDesc, const gpu::Context &gpuContext)
 {
-    assert(dataDesc.data.size > 0 && dataDesc.data.size % dataDesc.workgroupSize == 0 && "Data size must be a multiple of workgroup size");
+    assert(dataDesc.data.size > 0 && "Input buffer size must be greater than 0");
+    assert(dataDesc.data.size / sizeof(float) % dataDesc.workgroupSize == 0 &&
+           "Number of elements in the input buffer must be a multiple of workgroup size");
     assert(dataDesc.workgroupSize % 2 == 0 && "Workgroup size must be a multiple of 2");
     const gpu::WorkgroupSize wgSize = { dataDesc.workgroupSize, 1, 1 };
 
