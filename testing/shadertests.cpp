@@ -1,15 +1,22 @@
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <gtest/gtest.h>
-#include "gpu.h"
-#include "spdlog/spdlog.h"
-#include "utils.h"
-#include "image.h"
+
+#include <iterator>
 #include <nifti1.h>
 #include <nifti1_io.h>
 #include <cstddef>
 #include <filesystem>
+#include <numeric>
 #include <vector>
+#include "gpu.h"
+#include "spdlog/spdlog.h"
+#include "utils.h"
+#include "image.h"
+#include "reduce.h"
 
 class ShaderTest : public ::testing::Test {
 protected:
@@ -156,11 +163,11 @@ TEST_F(ShaderTest, GradientX)
     auto gradientKernel = wgpuContext.makeKernel(gradientKernelDesc);
 
     wgpuContext.dispatchKernel(gradientKernel,
-                                  {
-                                      cpuImage.width / 16,
-                                      cpuImage.height / 16,
-                                      1
-                                  });
+                               {
+                                   cpuImage.width / 16,
+                                   cpuImage.height / 16,
+                                   1
+                               });
 
     std::vector<float> gpuOutput(static_cast<float>(cpuImage.width) * cpuImage.height);
     wgpuContext.downloadBuffer(outputBuffer, gpuOutput.data());
@@ -219,11 +226,11 @@ TEST_F(ShaderTest, GradientY)
     auto gradientKernel = wgpuContext.makeKernel(gradientKernelDesc);
 
     wgpuContext.dispatchKernel(gradientKernel,
-                                  {
-                                      cpuImage.width / 16,
-                                      cpuImage.height / 16,
-                                      1
-                                  });
+                               {
+                                   cpuImage.width / 16,
+                                   cpuImage.height / 16,
+                                   1
+                               });
 
     std::vector<float> gpuOutput(cpuImage.width * cpuImage.height);
     wgpuContext.downloadBuffer(outputBuffer, gpuOutput.data());
@@ -365,10 +372,10 @@ TEST_F(ShaderTest, TransformImage3D)
 
     auto transformKernel = wgpuContext.makeKernel(transformKernelDesc);
     wgpuContext.dispatchKernel(transformKernel, {
-                                                       cpuImage.width + 3 / 4,
-                                                       cpuImage.height + 3 / 4,
-                                                       cpuImage.depth + 3/ 4
-                                                      });
+                                                    cpuImage.width + 3 / 4,
+                                                    cpuImage.height + 3 / 4,
+                                                    cpuImage.depth + 3/ 4
+                                                });
 
 
     std::vector<uint8_t> gpuOutputData(cpuImage.width * cpuImage.height * cpuImage.depth);
@@ -491,6 +498,57 @@ TEST_F(ShaderTest, ReductionFloat)
 
     EXPECT_NEAR(cpuResult, gpuResult, 1e-1);
 }
+
+TEST_F(ShaderTest, MultiStageReductionFloat)
+{
+    auto gpuReduction = [&](const std::vector<float>& originalData){
+        size_t originalSize = originalData.size();
+        const gpu::WorkgroupSize wgSize = { 256, 1, 1};
+
+        std::vector<float> data = originalData;
+        if(originalSize < wgSize.x) {
+            data.reserve(wgSize.x);
+            std::fill_n(std::back_inserter(data), wgSize.x - originalSize, 0.0F);
+        }
+        // Check if data size is a multiple of the workgroup size
+        // if not, pad the data with zeros
+        else if(originalSize % wgSize.x != 0) {
+            const size_t newSize = (originalSize / wgSize.x + 1) * wgSize.x;
+            data.resize((originalSize / wgSize.x + 1) * wgSize.x);
+            std::fill_n(std::back_inserter(data), data.size() - originalSize, 0.0F);
+        }
+
+        const gpu::DataBuffer inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(float));
+        wgpuContext.writeToBuffer(inputBuffer, data.data());
+
+        const gpu::GpuReductionDescriptor reductionDesc {
+            .workgroupSize = 256,
+            .unitSize = 1,
+            .data = inputBuffer,
+            .result = wgpuContext.makeEmptyBuffer(sizeof(float))
+        };
+
+        gpu::floatReduction(reductionDesc, wgpuContext);
+
+        float gpuResult = 0;
+        wgpuContext.downloadBuffer(reductionDesc.result, &gpuResult);
+        return gpuResult;
+    };
+
+    const std::array sizes = { 10, 256, 1000, 100001, 2 << 16 };
+
+    for(const auto size : sizes) {
+        std::vector<float> data(size);
+        std::generate(data.begin(), data.end(), []() { return static_cast<float>((rand() % 100)/10.0); });
+        const auto gpuResult = gpuReduction(data);
+
+        // Compute the reduction on the CPU in double precision for comparison
+        const double cpuResult = std::accumulate(data.begin(), data.end(), 0.0);
+        EXPECT_NEAR(cpuResult, gpuResult, 1e-1);
+    }
+
+}
+
 
 TEST_F(ShaderTest, Downsample)
 {
