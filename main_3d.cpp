@@ -6,6 +6,7 @@
 #include "scopedtimer.h"
 #include "transform.h"
 #include <matplot/matplot.h>
+#include <vector>
 
 
 
@@ -16,7 +17,6 @@ struct TransformationParameters {
     float tx = 0.0F;
     float ty = 0.0F;
     float tz = 0.0F;
-    std::array<float, 2> _padding; // WebGPU requires 16 byte alignment
 };
 
 struct SSDGradients {
@@ -81,10 +81,11 @@ gpu::Texture downsample3DTexture(
 }
 
 struct SingleLevelResult {
-    float finalSSD;
+    float finalSSD = 0.0F;
     std::vector<float> ssdHistory;
     // Final transform parameters for chaining to the next level
-    float alpha, beta, gamma, tx, ty, tz;
+    float alpha = 0.0F; float beta  = 0.0F; float gamma = 0.0F;
+    float tx    = 0.0F; float ty    = 0.0F; float tz    = 0.0F;
 };
 
 
@@ -267,9 +268,7 @@ int main(int argc, char **argv)
 
     // For gradient-based approach, set learning rates for angles & translations.
     // Using max dimension from the *full* resolution
-    const float maxImageDim = std::max(
-        {float(sourceImage.width), float(sourceImage.height), float(sourceImage.depth)}
-        );
+    const float maxImageDim = static_cast<float>(std::max(sourceImage.width, std::max(sourceImage.height, sourceImage.depth)));
     const float translationLearningRate = 2.0;
     const float angleLearningRate       = translationLearningRate / maxImageDim;
 
@@ -332,9 +331,9 @@ int main(int argc, char **argv)
         {
             // Because next level is double the dimension of the current,
             // the translation in voxel-space effectively doubles as well.
-            transformationParams.tx *= 2.0f;
-            transformationParams.ty *= 2.0f;
-            transformationParams.tz *= 2.0f;
+            transformationParams.tx *= 2.0F;
+            transformationParams.ty *= 2.0F;
+            transformationParams.tz *= 2.0F;
             spdlog::info("Upscaled translation for next level: Tx={}, Ty={}, Tz={}",
                          transformationParams.tx, transformationParams.ty, transformationParams.tz
                          );
