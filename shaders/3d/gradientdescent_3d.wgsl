@@ -22,7 +22,7 @@ struct SSDGradients {
     dssd_dtz: f32,
 };
 
-@group(0) @binding(0) var<uniform> params: TransformationParameters;
+@group(0) @binding(0) var<storage, read> params: TransformationParameters;
 @group(0) @binding(1) var targetImage: texture_3d<f32>;
 @group(0) @binding(2) var movingImage: texture_3d<f32>;
 @group(0) @binding(3) var<storage, read_write> ssdGrads: array<SSDGradients>;
