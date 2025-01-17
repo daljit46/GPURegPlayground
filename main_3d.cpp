@@ -5,6 +5,8 @@
 #include "spdlog/spdlog.h"
 #include "scopedtimer.h"
 #include "transform.h"
+
+#include "reduce.h"
 #include <matplot/matplot.h>
 #include <vector>
 
@@ -87,6 +89,138 @@ struct SingleLevelResult {
     float alpha = 0.0F; float beta  = 0.0F; float gamma = 0.0F;
     float tx    = 0.0F; float ty    = 0.0F; float tz    = 0.0F;
 };
+
+
+SingleLevelResult registerAtSingleResolutionGPUOnly(
+    gpu::Context &context,
+    const gpu::Texture &sourceTexture,
+    const gpu::Texture &targetTexture,
+    TransformationParameters &transformationParams,
+    const gpu::WorkgroupSize &workgroupSize,
+    int maxIterations
+)
+{
+    const gpu::WorkgroupGrid workgrid {
+        .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
+        .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
+        .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
+    };
+
+    gpu::DataBuffer transformationBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
+
+    SSDGradients ssdGradients;
+
+    // Size of array of SSD gradients is the number of workgroups in the grid times size of SSDGradients struct
+    const uint32_t workgroupCount = workgrid.x * workgrid.y * workgrid.z;
+    spdlog::info("Workgroup Count: {}", workgroupCount);
+    const size_t ssdGradientsSize = sizeof(SSDGradients) * workgroupCount;
+    gpu::DataBuffer ssdGradientsBuffer = context.makeEmptyBuffer(ssdGradientsSize);
+    gpu::DataBuffer reductionResultBuffer = context.makeEmptyBuffer(sizeof(SSDGradients));
+
+    const gpu::KernelDescriptor gradientDescentDesc {
+        .shader = {
+            .name = "gradientdescent",
+            .entryPoint = "main",
+            .code = Utils::readFile("shaders/3d/gradientdescent_3d.wgsl"),
+            .workgroupSize = workgroupSize
+        },
+        .inputBuffers = { transformationBuffer },
+        .inputTextures  = { targetTexture, sourceTexture },
+        .outputBuffers  = { ssdGradientsBuffer },
+        .samplers       = { context.makeLinearSampler() }
+    };
+
+    std::string reductionShaderSource = Utils::readFile("shaders/reduction_f32_multi_stage.wgsl");
+    reductionShaderSource = Utils::replacePlaceholder(reductionShaderSource, "unit_size",
+                                                      std::to_string(sizeof(SSDGradients)/sizeof(float)));
+
+    const gpu::ReductionDescriptor reductionDesc{
+        .workgroupSize = 256,
+        .unitSize = sizeof(SSDGradients) / sizeof(float),
+        .data = ssdGradientsBuffer,
+        .result = reductionResultBuffer
+    };
+
+    gpu::ReductionHelper reductionHelper(reductionDesc, context);
+
+    // Adam optimiser needs to keep track of state across iterations
+    // 6 parameter values, 6 learning rates, 6 first moments and 6 second moments
+    const gpu::DataBuffer adamStateBuffer = context.makeEmptyBuffer(24 * sizeof(float));
+    const gpu::DataBuffer minSSDBuffer = context.makeEmptyBuffer(sizeof(float));
+    const gpu::DataBuffer minTransformParametersBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
+    const gpu::DataBuffer ssdHistoryBuffer = context.makeEmptyBuffer(maxIterations * sizeof(float));
+    const gpu::DataBuffer currentIterationBuffer = context.makeEmptyBuffer(sizeof(uint32_t));
+    const gpu::DataBuffer indirectDispatchBuffer = context.makeIndirectDispatchBuffer();
+    context.writeToBuffer(indirectDispatchBuffer, &workgrid);
+
+    const gpu::KernelDescriptor adamStepDesc {
+        .shader = {
+            .name = "adamstep",
+            .entryPoint = "main",
+            .code = Utils::readFile("shaders/3d/adamstep_3d.wgsl"),
+            .workgroupSize = {1, 1, 1}
+        },
+        .inputBuffers = { reductionResultBuffer },
+        .outputBuffers = {
+            adamStateBuffer,
+            transformationBuffer,
+            minSSDBuffer,
+            minTransformParametersBuffer,
+            ssdHistoryBuffer,
+            currentIterationBuffer,
+            indirectDispatchBuffer
+        },
+    };
+
+
+    auto gradientDescentKernel  = context.makeKernel(gradientDescentDesc);
+    auto adamStepKernel = context.makeKernel(adamStepDesc);
+
+    float minSSD = std::numeric_limits<float>::max();
+
+
+    for (int i = 0; i < 2; ++i) {
+        context.writeToBuffer(transformationBuffer, &transformationParams);
+
+        ssdGradients = {};
+        context.dispatchKernelIndirect(gradientDescentKernel, indirectDispatchBuffer);
+        reductionHelper.dispatchIndirect(context, indirectDispatchBuffer);
+        context.dispatchKernel(adamStepKernel, {1, 1, 1});
+    }
+
+    // Download the SSD history from GPU
+    std::vector<float> ssdHistory;
+    ssdHistory.reserve(maxIterations);
+
+    context.downloadBuffer(ssdHistoryBuffer, ssdHistory.data());
+
+    // spdlog::info("SSD History:");
+    // for (int i = 0; i < maxIterations; ++i) {
+    //     spdlog::info("{} : {}", i, ssdHistory[i]);
+    // }
+
+    context.downloadBuffer(minSSDBuffer, &minSSD);
+    context.downloadBuffer(minTransformParametersBuffer, &transformationParams);
+
+    spdlog::info("Final SSD: {}", minSSD);
+    spdlog::info("Final Transform: Alpha: {}, Beta: {}, Gamma: {}, Tx: {}, Ty: {}, Tz: {}",
+                 transformationParams.alpha, transformationParams.beta, transformationParams.gamma,
+                 transformationParams.tx, transformationParams.ty, transformationParams.tz);
+
+
+    // Return final result for chaining
+    SingleLevelResult result;
+    result.finalSSD = minSSD;
+    result.ssdHistory = ssdHistory;
+    result.alpha = transformationParams.alpha;
+    result.beta  = transformationParams.beta;
+    result.gamma = transformationParams.gamma;
+    result.tx    = transformationParams.tx;
+    result.ty    = transformationParams.ty;
+    result.tz    = transformationParams.tz;
+    return result;
+}
+
 
 
 SingleLevelResult registerAtSingleResolution(
@@ -310,14 +444,14 @@ int main(int argc, char **argv)
 
         optimizer = AdamOptimizer(parameters);
 
-        auto result = registerAtSingleResolution(
+        auto result = registerAtSingleResolutionGPUOnly(
             context,
             sourcePyramid[level],
             targetPyramid[level],
             transformationParams, // updated in place
             workgroupSize,
-            maxIterations,
-            optimizer
+            maxIterations
+            // ,optimizer
             );
 
         globalSSDHistory.insert( globalSSDHistory.end(),

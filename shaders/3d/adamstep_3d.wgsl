@@ -3,7 +3,7 @@
 
 const MAX_ITERATIONS: u32 = 500;
 const NUM_ADAM_PARAMETERS: u32 = 6;
-const ADAM_BETA1: f32 = 0.65;
+const ADAM_BETA1: f32 = 0.7;
 const ADAM_BETA2: f32 = 0.9999;
 const ADAM_EPSILON: f32 = 1e-8;
 
@@ -16,7 +16,7 @@ struct TransformationParameters {
     tz: f32
 };
 
-struct GradientValues {
+struct SSDGradients {
     ssd: f32,
     dssd_dalpha: f32,
     dssd_dbeta: f32,
@@ -34,9 +34,9 @@ struct AdamState {
     secondMoments: array<f32, NUM_ADAM_PARAMETERS>,
 };
 
-@group(0) @binding(0) var<storage, read_write> inputGradientValues: GradientValues;
-@group(0) @binding(1) var<storage, read_write> transformParams: TransformationParameters;
-@group(0) @binding(2) var<storage, read_write> adamState: AdamState;
+@group(0) @binding(0) var<storage, read_write> inputGradientValues: SSDGradients;
+@group(0) @binding(1) var<storage, read_write> adamState: AdamState;
+@group(0) @binding(2) var<storage, read_write> transformParams: TransformationParameters;
 @group(0) @binding(3) var<storage, read_write> minSSD: f32;
 @group(0) @binding(4) var<storage, read_write> minTransformParams: TransformationParameters;
 @group(0) @binding(5) var<storage, read_write> ssdHistory: array<f32, MAX_ITERATIONS>;
