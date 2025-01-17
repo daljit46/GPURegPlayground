@@ -113,26 +113,26 @@ struct Context {
     [[nodiscard]] static Context newContext();
 
     Texture makeEmptyTexture(const TextureSpecification& spec) const;
-    Texture makeTextureFromHostPgm(const PgmImage& image);
-    Texture makeTextureFromHostNifti(const NiftiImage& image);
-    DataBuffer makeEmptyBuffer(size_t size);
-    DataBuffer makeUniformBuffer(const void* data, size_t size);
+    Texture makeTextureFromHostPgm(const PgmImage& image) const;
+    Texture makeTextureFromHostNifti(const NiftiImage& image) const;
+    DataBuffer makeEmptyBuffer(size_t size) const;
+    DataBuffer makeUniformBuffer(const void* data, size_t size) const;
 
-    void downloadTexture(const Texture& buffer, void *data);
-    void downloadBuffer(const DataBuffer& dataBuffer, void *data);
-    void downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs);
-    void writeToBuffer(const DataBuffer& dataBuffer, void* data) const;
+    void downloadTexture(const Texture& buffer, void *data) const;
+    void downloadBuffer(const DataBuffer& dataBuffer, void *data) const;
+    void downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs) const;
+    void writeToBuffer(const DataBuffer& dataBuffer, const void *data) const;
 
-    wgpu::ShaderModule makeShaderModule(const std::string& name, const std::string& code);
-    wgpu::Sampler makeLinearSampler();
+    wgpu::ShaderModule makeShaderModule(const std::string& name, const std::string& code) const;
+    wgpu::Sampler makeLinearSampler() const;
 
-    Kernel makeKernel(const KernelDescriptor &kernelDescriptor);
-    void dispatchKernel(const Kernel& kernel, WorkgroupGrid workgroupDimensions);
+    Kernel makeKernel(const KernelDescriptor &kernelDescriptor) const;
+    void dispatchKernel(const Kernel& kernel, WorkgroupGrid workgroupDimensions) const;
 
-    void updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size);
+    void updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size) const;
 
     // Completion handler must be alive until the operation is completed
-    void waitForAllQueueOperations();
+    void waitForAllQueueOperations() const;
 };
 
 }

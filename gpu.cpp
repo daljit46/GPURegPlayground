@@ -109,7 +109,7 @@ wgpu::TextureFormat convertFormatToWGPU(TextureFormat format)
     }
 }
 
-Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth, const uint8_t* data, Context &context, const wgpu::TextureUsage& additionalFlags = {})
+Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth, const uint8_t* data, const Context &context, const wgpu::TextureUsage& additionalFlags = {})
 {
     assert(width * height * depth > 0);
     wgpu::TextureDescriptor descriptor;
@@ -278,17 +278,17 @@ Texture Context::makeEmptyTexture(const TextureSpecification &spec) const
     };
 }
 
-Texture Context::makeTextureFromHostPgm(const PgmImage &image)
+Texture Context::makeTextureFromHostPgm(const PgmImage &image) const
 {
     return makeTextureFromHostImage(image.width, image.height, 1, static_cast<const uint8_t*>(image.data.data()), *this, {});
 }
 
-Texture Context::makeTextureFromHostNifti(const NiftiImage &image)
+Texture Context::makeTextureFromHostNifti(const NiftiImage &image) const
 {
     return makeTextureFromHostImage(image.width, image.height, image.depth, image.data(), *this, {});
 }
 
-void Context::downloadTexture(const Texture &texture, void *data)
+void Context::downloadTexture(const Texture &texture, void *data) const
 {
     // WebGPU requires that the bytes per row is a multiple of 256
     auto paddedBytesPerRow = [](uint32_t width, uint32_t bytesPerPixel) {
@@ -370,8 +370,8 @@ void Context::downloadTexture(const Texture &texture, void *data)
                                               mappingInfo
                                               );
 
-    // Wait for mapping to finish
-    instance.WaitAny(bufferMapped, std::numeric_limits<uint64_t>::max());
+    wgpu::FutureWaitInfo waitInfo {bufferMapped};
+    auto status = instance.WaitAny(1, &waitInfo, std::numeric_limits<uint64_t>::max());
 
     uint8_t* dataPtr = reinterpret_cast<uint8_t*>(data);
 
@@ -387,7 +387,7 @@ void Context::downloadTexture(const Texture &texture, void *data)
     mapResult.buffer.Unmap();
 }
 
-DataBuffer Context::makeEmptyBuffer(size_t size)
+DataBuffer Context::makeEmptyBuffer(size_t size) const
 {
     const wgpu::BufferDescriptor desc {
         .usage = wgpu::BufferUsage::CopySrc |
@@ -410,7 +410,7 @@ DataBuffer Context::makeEmptyBuffer(size_t size)
     return buffer;
 }
 
-wgpu::ShaderModule Context::makeShaderModule(const std::string &name, const std::string &code)
+wgpu::ShaderModule Context::makeShaderModule(const std::string &name, const std::string &code) const
 {
     wgpu::ShaderModuleWGSLDescriptor wgslDescriptor {};
     wgslDescriptor.code = code.c_str();
@@ -421,7 +421,7 @@ wgpu::ShaderModule Context::makeShaderModule(const std::string &name, const std:
     return device.CreateShaderModule(&descriptor);
 }
 
-Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor)
+Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor) const
 {
     // Create BindGroupLayout with all input and output buffers
     std::vector<wgpu::BindGroupLayoutEntry> layoutEntries;
@@ -597,7 +597,7 @@ Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor)
     };
 }
 
-DataBuffer Context::makeUniformBuffer(const void *data, size_t size)
+DataBuffer Context::makeUniformBuffer(const void *data, size_t size) const
 {
     wgpu::BufferDescriptor descriptor;
     descriptor.size = size;
@@ -616,7 +616,7 @@ DataBuffer Context::makeUniformBuffer(const void *data, size_t size)
     };
 }
 
-void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data)
+void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data) const
 {
     const wgpu::BufferDescriptor outputBufferDesc {
         .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead,
@@ -648,14 +648,15 @@ void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data)
                           wgpu::CallbackMode::WaitAnyOnly,
                           callback);
 
-    auto status = instance.WaitAny(waitFuture, std::numeric_limits<uint64_t>::max());
+    wgpu::FutureWaitInfo waitInfo {waitFuture};
+    auto status = instance.WaitAny(1, &waitInfo, std::numeric_limits<uint64_t>::max());
 
     const void* output = outputBuffer.GetConstMappedRange();
     std::memcpy(data, output, outputBuffer.GetSize());
     outputBuffer.Unmap();
 }
 
-void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs)
+void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs) const
 {
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     // We create an output buffer that is large enough to hold all the buffers
@@ -698,7 +699,8 @@ void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& 
                                             wgpu::CallbackMode::WaitAnyOnly,
                                             callback);
 
-    auto status = instance.WaitAny(waitFuture, std::numeric_limits<uint64_t>::max());
+    wgpu::FutureWaitInfo waitInfo {waitFuture};
+    auto status = instance.WaitAny(1, &waitInfo, std::numeric_limits<uint64_t>::max());
 
     const void* output = outputBuffer.GetConstMappedRange();
 
@@ -711,13 +713,12 @@ void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& 
     outputBuffer.Unmap();
 }
 
-void Context::writeToBuffer(const DataBuffer &dataBuffer,void *data) const
+void Context::writeToBuffer(const DataBuffer &dataBuffer, const void *data) const
 {
     device.GetQueue().WriteBuffer(dataBuffer.wgpuHandle, 0, data, dataBuffer.size);
 }
 
-void Context::dispatchKernel(const Kernel& kernel,
-                             WorkgroupGrid workgroupDimensions)
+void Context::dispatchKernel(const Kernel& kernel, WorkgroupGrid workgroupDimensions) const
 {
     const wgpu::QuerySetDescriptor querySetDesc {
         .type = wgpu::QueryType::Timestamp,
@@ -747,7 +748,7 @@ void Context::dispatchKernel(const Kernel& kernel,
     queue.Submit(1, &commands);
 }
 
-wgpu::Sampler Context::makeLinearSampler()
+wgpu::Sampler Context::makeLinearSampler() const
 {
     const wgpu::SamplerDescriptor descriptor {
         .magFilter = wgpu::FilterMode::Linear,
@@ -760,12 +761,12 @@ wgpu::Sampler Context::makeLinearSampler()
     return device.CreateSampler(&descriptor);
 }
 
-void Context::updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size)
+void Context::updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size) const
 {
     device.GetQueue().WriteBuffer(buffer.wgpuHandle, 0, data, size);
 }
 
-void Context::waitForAllQueueOperations()
+void Context::waitForAllQueueOperations() const
 {
     auto queue = device.GetQueue();
     queue.Submit(0, nullptr);
