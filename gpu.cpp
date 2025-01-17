@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -616,6 +617,21 @@ DataBuffer Context::makeUniformBuffer(const void *data, size_t size) const
     };
 }
 
+DataBuffer Context::makeIndirectDispatchBuffer() const
+{
+    const wgpu::BufferDescriptor descriptor {
+        .usage = wgpu::BufferUsage::Indirect | wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
+        .size = sizeof(uint32_t) * 3,
+        .mappedAtCreation = false
+    };
+
+    return DataBuffer {
+        .wgpuHandle = device.CreateBuffer(&descriptor),
+        .usage = ResourceUsage::ReadWrite,
+        .size = descriptor.size
+    };
+}
+
 void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data) const
 {
     const wgpu::BufferDescriptor outputBufferDesc {
@@ -743,6 +759,24 @@ void Context::dispatchKernel(const Kernel& kernel, WorkgroupGrid workgroupDimens
 
 
     encoder.ResolveQuerySet(querySet, 0, 2, kernel.timestampResolveBuffer.wgpuHandle, 0);
+    auto commands = encoder.Finish();
+    auto queue = device.GetQueue();
+    queue.Submit(1, &commands);
+}
+
+void Context::dispatchKernelIndirect(const Kernel &kernel, const DataBuffer &indirectBuffer) const
+{
+    const wgpu::ComputePassDescriptor passDescriptor {
+        .label = kernel.name.c_str(),
+    };
+    wgpu::CommandEncoder const encoder = device.CreateCommandEncoder();
+    wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&passDescriptor);
+    pass.SetPipeline(kernel.pipeline);
+    pass.SetBindGroup(0, kernel.bindGroup);
+    pass.DispatchWorkgroupsIndirect(indirectBuffer.wgpuHandle, 0);
+    pass.End();
+
+
     auto commands = encoder.Finish();
     auto queue = device.GetQueue();
     queue.Submit(1, &commands);

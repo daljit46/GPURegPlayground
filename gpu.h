@@ -83,6 +83,7 @@ struct Kernel {
     wgpu::ComputePipeline pipeline;
     wgpu::BindGroup bindGroup;
     DataBuffer timestampResolveBuffer;
+    WorkgroupSize workgroupSize;
 };
 
 struct KernelDescriptor {
@@ -117,6 +118,7 @@ struct Context {
     Texture makeTextureFromHostNifti(const NiftiImage& image) const;
     DataBuffer makeEmptyBuffer(size_t size) const;
     DataBuffer makeUniformBuffer(const void* data, size_t size) const;
+    DataBuffer makeIndirectDispatchBuffer() const;
 
     void downloadTexture(const Texture& buffer, void *data) const;
     void downloadBuffer(const DataBuffer& dataBuffer, void *data) const;
@@ -128,7 +130,7 @@ struct Context {
 
     Kernel makeKernel(const KernelDescriptor &kernelDescriptor) const;
     void dispatchKernel(const Kernel& kernel, WorkgroupGrid workgroupDimensions) const;
-
+    void dispatchKernelIndirect(const Kernel& kernel, const DataBuffer& indirectBuffer) const;
     void updateUniformBuffer(const void *data, const DataBuffer &buffer, size_t size) const;
 
     // Completion handler must be alive until the operation is completed
