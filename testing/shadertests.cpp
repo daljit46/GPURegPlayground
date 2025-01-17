@@ -521,14 +521,15 @@ TEST_F(ShaderTest, MultiStageReductionFloat)
         const gpu::DataBuffer inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(float));
         wgpuContext.writeToBuffer(inputBuffer, data.data());
 
-        const gpu::GpuReductionDescriptor reductionDesc {
+        const gpu::ReductionDescriptor reductionDesc {
             .workgroupSize = 256,
             .unitSize = 1,
             .data = inputBuffer,
             .result = wgpuContext.makeEmptyBuffer(sizeof(float))
         };
 
-        gpu::floatReduction(reductionDesc, wgpuContext);
+        gpu::ReductionHelper reductionHelper(reductionDesc, wgpuContext);
+        reductionHelper.dispatch(wgpuContext);
 
         float gpuResult = 0;
         wgpuContext.downloadBuffer(reductionDesc.result, &gpuResult);
