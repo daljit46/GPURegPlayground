@@ -1,6 +1,7 @@
 #include "utils.h"
 #include "nifti1_io.h"
 #include "spdlog/spdlog.h"
+#include <cstddef>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
