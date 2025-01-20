@@ -672,7 +672,7 @@ void Context::downloadBuffer(const DataBuffer &dataBuffer, void *data) const
     outputBuffer.Unmap();
 }
 
-void Context::downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs) const
+void Context::downloadBuffers(const std::vector<BufferMappingPair> &bufferMappingPairs) const
 {
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
     // We create an output buffer that is large enough to hold all the buffers

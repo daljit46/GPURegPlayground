@@ -122,7 +122,9 @@ struct Context {
 
     void downloadTexture(const Texture& buffer, void *data) const;
     void downloadBuffer(const DataBuffer& dataBuffer, void *data) const;
-    void downloadBuffers(const std::vector<std::pair<DataBuffer*, void*>>& bufferMappingPairs) const;
+
+    using BufferMappingPair = std::pair<const DataBuffer *, void *>;
+    void downloadBuffers(const std::vector<BufferMappingPair> &bufferMappingPairs) const;
     void writeToBuffer(const DataBuffer& dataBuffer, const void *data) const;
 
     wgpu::ShaderModule makeShaderModule(const std::string& name, const std::string& code) const;
