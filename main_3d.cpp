@@ -261,16 +261,29 @@ SingleLevelResult registerAtSingleResolution(
     const gpu::Texture &targetTexture,
     TransformationParameters &transformationParams,
     const gpu::WorkgroupSize &workgroupSize,
-    int maxIterations,
-    AdamOptimizer &optimizer)
+    float rotationLearningRate,
+    float translationLearningRate,
+    int maxIterations)
 {
+    // Setup Adam with 6 parameters
+    std::vector<AdamOptimizer::Parameter> parameters = {
+        {.value = transformationParams.alpha, .learning_rate = rotationLearningRate },
+        {.value = transformationParams.beta,  .learning_rate = rotationLearningRate },
+        {.value = transformationParams.gamma, .learning_rate = rotationLearningRate },
+        {.value = transformationParams.tx,    .learning_rate = translationLearningRate },
+        {.value = transformationParams.ty,    .learning_rate = translationLearningRate },
+        {.value = transformationParams.tz,    .learning_rate = translationLearningRate }
+    };
+    AdamOptimizer optimizer(parameters);
+
     const gpu::WorkgroupGrid workgrid {
         .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
         .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
         .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
     };
 
-    auto uniformsBuffer = context.makeUniformBuffer(&transformationParams, sizeof(TransformationParameters));
+    auto transformationParamsBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
+    context.writeToBuffer(transformationParamsBuffer, &transformationParams);
 
     SSDGradients ssdGradients;
 
@@ -287,7 +300,7 @@ SingleLevelResult registerAtSingleResolution(
             .code = Utils::readFile("shaders/3d/gradientdescent_3d.wgsl"),
             .workgroupSize = workgroupSize
         },
-        .uniformBuffers = { uniformsBuffer },
+        .inputBuffers = { transformationParamsBuffer },
         .inputTextures  = { targetTexture, sourceTexture },
         .outputBuffers  = { ssdGradientsBuffer },
         .samplers       = { context.makeLinearSampler() }
@@ -301,7 +314,7 @@ SingleLevelResult registerAtSingleResolution(
     ssdHistory.reserve(maxIterations);
 
     for (int i = 0; i < maxIterations; ++i) {
-        context.writeToBuffer(uniformsBuffer, &transformationParams);
+        context.writeToBuffer(transformationParamsBuffer, &transformationParams);
 
         ssdGradients = {};
         context.dispatchKernel(gradientDescentKernel, workgrid);
@@ -319,7 +332,7 @@ SingleLevelResult registerAtSingleResolution(
         const float dssd_dtz    = ssdGradients.dssd_dtz;
 
         spdlog::info(
-            "SSD1: {} dAlpha: {} dBeta: {} dGamma: {} dTx: {} dTy: {} dTz: {}",
+            "SSD: {} dAlpha: {} dBeta: {} dGamma: {} dTx: {} dTy: {} dTz: {}",
             ssd, dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz
             );
 
@@ -377,9 +390,15 @@ SingleLevelResult registerAtSingleResolution(
 
 int main(int argc, char **argv)
 {
-    if (argc > 1 && std::string(argv[1]) == "--trace") {
+    std::vector<std::string> appArgs(argv, argv + argc);
+    bool gpuOnlyVersion = false;
+    if (std::find(appArgs.begin(), appArgs.end(), "--gpuonly") != appArgs.end()) {
+        gpuOnlyVersion = true;
+    }
+    if (std::find(appArgs.begin(), appArgs.end(), "--trace") != appArgs.end()) {
         spdlog::set_level(spdlog::level::trace);
     }
+
     ScopedTimer timer ("main");
     auto context = gpu::Context::newContext();
 
@@ -438,17 +457,6 @@ int main(int argc, char **argv)
     const float translationLearningRate = 2.0;
     const float angleLearningRate       = translationLearningRate / maxImageDim;
 
-    // Setup Adam with 6 parameters
-    std::vector<AdamOptimizer::Parameter> parameters = {
-        {.value = transformationParams.alpha, .learning_rate = angleLearningRate },
-        {.value = transformationParams.beta,  .learning_rate = angleLearningRate },
-        {.value = transformationParams.gamma, .learning_rate = angleLearningRate },
-        {.value = transformationParams.tx,    .learning_rate = translationLearningRate },
-        {.value = transformationParams.ty,    .learning_rate = translationLearningRate },
-        {.value = transformationParams.tz,    .learning_rate = translationLearningRate }
-    };
-    AdamOptimizer optimizer(parameters);
-
     // We'll store SSD history for final plotting
     std::vector<float> globalSSDHistory;
 
@@ -458,39 +466,34 @@ int main(int argc, char **argv)
     for (int level = 0; level < 4; ++level)
     {
         spdlog::info("\n\n=== Registering at pyramid level {} (0=coarse, 3=full) ===", level);
-
-        // Update transformation parameters in case we up-scaled from previous step
-        parameters[0].value = transformationParams.alpha;
-        parameters[1].value = transformationParams.beta;
-        parameters[2].value = transformationParams.gamma;
-        parameters[3].value = transformationParams.tx;
-        parameters[4].value = transformationParams.ty;
-        parameters[5].value = transformationParams.tz;
-        // Decrease learning rate as we go to up-scaled levels
-        parameters[0].learning_rate = angleLearningRate / std::pow(2, level + 1);
-        parameters[1].learning_rate = angleLearningRate / std::pow(2, level + 1);
-        parameters[2].learning_rate = angleLearningRate / std::pow(2, level + 1);
-        parameters[3].learning_rate = translationLearningRate / std::pow(2, level + 1);
-        parameters[4].learning_rate = translationLearningRate / std::pow(2, level + 1);
-        parameters[5].learning_rate = translationLearningRate / std::pow(2, level + 1);
-
-        optimizer = AdamOptimizer(parameters);
-
-        auto result = registerAtSingleResolutionGPUOnly(
-            context,
-            sourcePyramid[level],
-            targetPyramid[level],
-            transformationParams, // updated in place
-            workgroupSize,
-            angleLearningRate / std::pow(2, level + 1),
-            translationLearningRate / std::pow(2, level + 1),
-            maxIterations
+        auto result = [&]() {
+            if(gpuOnlyVersion) {
+                return registerAtSingleResolutionGPUOnly(
+                    context,
+                    sourcePyramid[level],
+                    targetPyramid[level],
+                    transformationParams, // updated in place
+                    workgroupSize,
+                    angleLearningRate / std::pow(2, level + 1),
+                    translationLearningRate / std::pow(2, level + 1),
+                    maxIterations
+                );
+            }
+            else return registerAtSingleResolution(
+                context,
+                sourcePyramid[level],
+                targetPyramid[level],
+                transformationParams, // updated in place
+                workgroupSize,
+                angleLearningRate / std::pow(2, level + 1),
+                translationLearningRate / std::pow(2, level + 1),
+                maxIterations
             );
-
+        }();
         globalSSDHistory.insert( globalSSDHistory.end(),
             result.ssdHistory.begin(),
             result.ssdHistory.end()
-            );
+        );
 
         // If not yet at the finest level, rescale translation parameters
         // to the next finer resolution. Rotations remain the same.
