@@ -736,19 +736,9 @@ void Context::writeToBuffer(const DataBuffer &dataBuffer, const void *data) cons
 
 void Context::dispatchKernel(const Kernel& kernel, WorkgroupGrid workgroupDimensions) const
 {
-    const wgpu::QuerySetDescriptor querySetDesc {
-        .type = wgpu::QueryType::Timestamp,
-        .count = 2
-    };
-    const wgpu::QuerySet querySet = device.CreateQuerySet(&querySetDesc);
-    const wgpu::ComputePassTimestampWrites timestampWrites {
-        .querySet = querySet,
-        .beginningOfPassWriteIndex = 0,
-        .endOfPassWriteIndex = 1
-    };
+    // TODO: reenable query sets
     const wgpu::ComputePassDescriptor passDescriptor {
         .label = kernel.name.c_str(),
-        .timestampWrites = &timestampWrites,
     };
     wgpu::CommandEncoder const encoder = device.CreateCommandEncoder();
     wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&passDescriptor);
@@ -758,7 +748,6 @@ void Context::dispatchKernel(const Kernel& kernel, WorkgroupGrid workgroupDimens
     pass.End();
 
 
-    encoder.ResolveQuerySet(querySet, 0, 2, kernel.timestampResolveBuffer.wgpuHandle, 0);
     auto commands = encoder.Finish();
     auto queue = device.GetQueue();
     queue.Submit(1, &commands);
