@@ -221,11 +221,14 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
 
     spdlog::info("SSD History:");
     for (int i = 0; i < maxIterations; ++i) {
-        spdlog::info("SSD: {}, dssd_dalpha: {}, dssd_dbeta: {}, dssd_dgamma: {}, dssd_dtx: {}, dssd_dty: {}, dssd_dtz: {}",
-                     ssdGradientsHistory[i].ssd, ssdGradientsHistory[i].dssd_dalpha,
-                     ssdGradientsHistory[i].dssd_dbeta, ssdGradientsHistory[i].dssd_dgamma,
-                     ssdGradientsHistory[i].dssd_dtx, ssdGradientsHistory[i].dssd_dty,
-                     ssdGradientsHistory[i].dssd_dtz);
+        SSDGradients ssdGradient = ssdGradientsHistory[i];
+        SSDGradients zeroGradient = {};
+        if(ssdGradient.ssd == zeroGradient.ssd && i > 0) {
+            break;
+        }
+        spdlog::info("{} SSD: {}, dssd_dalpha: {}, dssd_dbeta: {}, dssd_dgamma: {}, dssd_dtx: {}, dssd_dty: {}, dssd_dtz: {}",
+                     i, ssdGradient.ssd, ssdGradient.dssd_dalpha, ssdGradient.dssd_dbeta, ssdGradient.dssd_dgamma,
+                     ssdGradient.dssd_dtx, ssdGradient.dssd_dty, ssdGradient.dssd_dtz);
     }
 
 
