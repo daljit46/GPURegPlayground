@@ -28,7 +28,6 @@ struct SSDGradients {
 
 
 struct AdamState {
-    values: array<f32, NUM_ADAM_PARAMETERS>,
     learning_rates: array<f32, NUM_ADAM_PARAMETERS>,
     firstMoments: array<f32, NUM_ADAM_PARAMETERS>,
     secondMoments: array<f32, NUM_ADAM_PARAMETERS>,
@@ -39,18 +38,18 @@ struct AdamState {
 @group(0) @binding(2) var<storage, read_write> transformParams: TransformationParameters;
 @group(0) @binding(3) var<storage, read_write> minSSD: f32;
 @group(0) @binding(4) var<storage, read_write> minTransformParams: TransformationParameters;
-@group(0) @binding(5) var<storage, read_write> ssdHistory: array<f32, MAX_ITERATIONS>;
+@group(0) @binding(5) var<storage, read_write> ssdHistory: array<SSDGradients, MAX_ITERATIONS>;
 @group(0) @binding(6) var<storage, read_write> currentIteration: u32;
-@group(0) @binding(7) var<storage, read_write> dispatchIndirectBuffer: array<u32, 3>;
+@group(0) @binding(7) var<storage, read_write> stop: u32;
+
 
 // A single thread will update the parameters using Adam optimizer
 @compute @workgroup_size(1)
 fn main() {
-    if(dispatchIndirectBuffer[0] == 0u || dispatchIndirectBuffer[1] == 0u || dispatchIndirectBuffer[2] == 0u) {
+    if(stop > 0u) {
         return;
     }
 
-    // We need to bit cast the u32 gradients to f32
     let ssd = inputGradientValues.ssd;
     let dssd_dalpha = inputGradientValues.dssd_dalpha;
     let dssd_dbeta = inputGradientValues.dssd_dbeta;
@@ -67,23 +66,34 @@ fn main() {
     currentIteration += 1u;
 
     let gradients = array<f32, NUM_ADAM_PARAMETERS>(dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz);
+    var newTransformParams = array<f32, NUM_ADAM_PARAMETERS>(
+        transformParams.alpha, transformParams.beta, transformParams.gamma,
+        transformParams.tx, transformParams.ty, transformParams.tz
+    );
     for(var i = 0u; i < NUM_ADAM_PARAMETERS; i = i + 1u) {
         adamState.firstMoments[i] = ADAM_BETA1 * adamState.firstMoments[i] + (1.0 - ADAM_BETA1) * gradients[i];
         adamState.secondMoments[i] = ADAM_BETA2 * adamState.secondMoments[i] + (1.0 - ADAM_BETA2) * gradients[i] * gradients[i];
 
         let firstMomentBiasCorrected = adamState.firstMoments[i] / (1.0 - pow(ADAM_BETA1, f32(currentIteration)));
         let secondMomentBiasCorrected = adamState.secondMoments[i] / (1.0 - pow(ADAM_BETA2, f32(currentIteration)));
-        adamState.values[i] -= adamState.learning_rates[i] * firstMomentBiasCorrected / (sqrt(secondMomentBiasCorrected) + ADAM_EPSILON);
+        newTransformParams[i] -= adamState.learning_rates[i] * firstMomentBiasCorrected / (sqrt(secondMomentBiasCorrected) + ADAM_EPSILON);
     }
 
-    transformParams.alpha = adamState.values[0];
-    transformParams.beta = adamState.values[1];
-    transformParams.gamma = adamState.values[2];
-    transformParams.tx = adamState.values[3];
-    transformParams.ty = adamState.values[4];
-    transformParams.tz = adamState.values[5];
+    transformParams.alpha = newTransformParams[0];
+    transformParams.beta = newTransformParams[1];
+    transformParams.gamma = newTransformParams[2];
+    transformParams.tx = newTransformParams[3];
+    transformParams.ty = newTransformParams[4];
+    transformParams.tz = newTransformParams[5];
 
-    ssdHistory[currentIteration] = ssd;
+    ssdHistory[currentIteration].ssd = ssd;
+    ssdHistory[currentIteration].dssd_dalpha = dssd_dalpha;
+    ssdHistory[currentIteration].dssd_dbeta = dssd_dbeta;
+    ssdHistory[currentIteration].dssd_dgamma = dssd_dgamma;
+    ssdHistory[currentIteration].dssd_dtx = dssd_dtx;
+    ssdHistory[currentIteration].dssd_dty = dssd_dty;
+    ssdHistory[currentIteration].dssd_dtz = dssd_dtz;
+
     // Reset the gradients
     inputGradientValues.ssd = 0.0;
     inputGradientValues.dssd_dalpha = 0.0;
@@ -96,23 +106,20 @@ fn main() {
 
     // Check if the last 10 iterations have not improved the SSD
     var hasNotImproved = false;
-    if(currentIteration > 20) {
+    if(currentIteration > 10) {
         // Compute mean of the last 10 SSD values
         var meanSSD = 0.0;
         for(var i = 0u; i < 10u; i = i + 1u) {
-            meanSSD = meanSSD + ssdHistory[currentIteration - i];
+            meanSSD += ssdHistory[currentIteration - i].ssd;
         }
         meanSSD = meanSSD / 10.0;
 
         // Check if the mean SSD has not improved
-        if(meanSSD >= ssdHistory[currentIteration - 10u]) {
+        if(abs(meanSSD - ssd) < 0.01) {
             hasNotImproved = true;
         }
     }
     if(currentIteration >= MAX_ITERATIONS || hasNotImproved) {
-        // Dispatch the next compute shader
-        dispatchIndirectBuffer[0] = 0u;
-        dispatchIndirectBuffer[1] = 0u;
-        dispatchIndirectBuffer[2] = 0u;
+        stop = 1u;
     }
 }
