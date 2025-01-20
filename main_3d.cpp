@@ -199,8 +199,8 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
         reductionHelper.dispatch(context);
         context.dispatchKernel(adamStepKernel, {1, 1, 1});
 
-        // Every 10 iterations, check if we should stop
-        if (i % 10 == 0) {
+        // Every 5 iterations, check if we should stop
+        if (i % 5 == 0) {
             context.downloadBuffer(stopIterationBuffer, &stopIteration);
             if (stopIteration) {
                 break;
