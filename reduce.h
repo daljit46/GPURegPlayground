@@ -19,12 +19,11 @@ struct ReductionHelper {
     explicit ReductionHelper(const gpu::ReductionDescriptor& dataDesc, const gpu::Context& gpuContext);
 
     void dispatch(const gpu::Context& gpuContext);
-    void dispatchIndirect(const gpu::Context& gpuContext, const gpu::DataBuffer& indirectBuffer);
-
 private:
     std::vector<gpu::DataBuffer> m_partialSums;
     std::vector<gpu::Kernel> m_kernels;
-    size_t m_numberOfElements = 0;
+    size_t m_totalNumberOfUnits = 0;
+    uint32_t m_unitSize = 1;
 };
 
 }

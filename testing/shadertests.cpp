@@ -499,7 +499,101 @@ TEST_F(ShaderTest, ReductionFloat)
     EXPECT_NEAR(cpuResult, gpuResult, 1e-1);
 }
 
-TEST_F(ShaderTest, MultiStageReductionFloat)
+TEST_F(ShaderTest, MultiStageReductionFloatNoPadding)
+{
+    auto gpuReduction = [&](const std::vector<float>& originalData){
+        size_t originalSize = originalData.size();
+        spdlog::info("Original data size: {}", originalSize);
+        const gpu::WorkgroupSize wgSize = { 256, 1, 1};
+        std::vector<float> data = originalData;
+        const gpu::DataBuffer inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(float));
+        spdlog::info("Input buffer size: {}", data.size());
+        wgpuContext.writeToBuffer(inputBuffer, data.data());
+
+        const gpu::ReductionDescriptor reductionDesc {
+            .workgroupSize = 256,
+            .unitSize = 1,
+            .data = inputBuffer,
+            .result = wgpuContext.makeEmptyBuffer(sizeof(float))
+        };
+
+        gpu::ReductionHelper reductionHelper(reductionDesc, wgpuContext);
+        reductionHelper.dispatch(wgpuContext);
+
+        float gpuResult = 0;
+        wgpuContext.downloadBuffer(reductionDesc.result, &gpuResult);
+        return gpuResult;
+    };
+
+    const std::array sizes = { 256, 512, 1 << 16, 2 << 19 };
+
+    for(const auto size : sizes) {
+        std::vector<float> data(size);
+        std::generate(data.begin(), data.end(), []() { return static_cast<float>((rand() % 100)/10.0); });
+        const auto gpuResult = gpuReduction(data);
+
+        // Compute the reduction on the CPU in double precision for comparison
+        const double cpuResult = std::accumulate(data.begin(), data.end(), 0.0);
+        EXPECT_NEAR(cpuResult, gpuResult, 1e-1);
+    }
+}
+
+TEST_F(ShaderTest, MultiStageReductionFloatNoPaddingWithNonSingularUnitSizes)
+{
+    const std::vector<std::pair<uint32_t, uint32_t>> unitSizesAndSizes = {
+        {2, 512},
+        {3, 3 << 8},
+        {4, 4 << 9},
+        {5, 5 << 10},
+        {6, 6 << 11},
+        {7, 7 << 12}
+    };
+    auto gpuReduction = [&](const std::vector<float>& originalData, uint32_t unitSize){
+        size_t originalSize = originalData.size();
+        spdlog::info("Original data size: {}", originalSize);
+        const gpu::WorkgroupSize wgSize = { 256, 1, 1};
+        std::vector<float> data = originalData;
+        const gpu::DataBuffer inputBuffer = wgpuContext.makeEmptyBuffer(data.size() * sizeof(float));
+        spdlog::info("Input buffer size: {}", data.size());
+        wgpuContext.writeToBuffer(inputBuffer, data.data());
+
+        const gpu::ReductionDescriptor reductionDesc {
+            .workgroupSize = 256,
+            .unitSize = unitSize,
+            .data = inputBuffer,
+            .result = wgpuContext.makeEmptyBuffer(sizeof(float) * unitSize)
+        };
+
+        gpu::ReductionHelper reductionHelper(reductionDesc, wgpuContext);
+        reductionHelper.dispatch(wgpuContext);
+
+        std::vector<float> gpuResult(unitSize);
+        wgpuContext.downloadBuffer(reductionDesc.result, gpuResult.data());
+        return gpuResult;
+    };
+
+    // Unit size means the elements in the input are treated as groups of unitSize elements
+    for(const auto& [unitSize, dataSize] :  unitSizesAndSizes) {
+        assert(dataSize % unitSize == 0);
+        std::vector<float> data(dataSize);
+        std::generate(data.begin(), data.end(), []() { return static_cast<float>((rand() % 100)/10.0); });
+
+        const auto gpuResult = gpuReduction(data, unitSize);
+
+        std::vector<float> cpuResult(unitSize, 0.0);
+        for(size_t i = 0; i < data.size(); i += unitSize) {
+            for(size_t j = 0; j < unitSize; j++) {
+                cpuResult[j] += data[i + j];
+            }
+        }
+
+        for(size_t i = 0; i < unitSize; i++) {
+            EXPECT_NEAR(cpuResult[i], gpuResult[i], 1e-1);
+        }
+    }
+}
+
+TEST_F(ShaderTest, MultiStageReductionFloatWithPadding)
 {
     auto gpuReduction = [&](const std::vector<float>& originalData){
         size_t originalSize = originalData.size();
@@ -536,7 +630,7 @@ TEST_F(ShaderTest, MultiStageReductionFloat)
         return gpuResult;
     };
 
-    const std::array sizes = { 10, 256, 1000, 100001, 2 << 16 };
+    const std::array sizes = { 10, 257, 10000, (1 << 19) + 1 };
 
     for(const auto size : sizes) {
         std::vector<float> data(size);
