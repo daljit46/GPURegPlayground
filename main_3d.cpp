@@ -1,4 +1,5 @@
 #include "adamoptimiser.h"
+#include "adabeliefoptimiser.h"
 #include "image.h"
 #include "gpu.h"
 #include "utils.h"
@@ -145,7 +146,7 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
 
     gpu::ReductionHelper reductionHelper(reductionDesc, context);
 
-    // Adam optimiser needs to keep track of state across iterations
+    // AdaBelief optimiser needs to keep track of state across iterations
     // 6 learning rates, 6 first moments and 6 second moments
     std::array<float, 18> initialAdamState = {
         // Learning rates for 3 angles and 3 translations
@@ -168,11 +169,11 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
     uint32_t stopIteration = 0u;
     context.writeToBuffer(stopIterationBuffer, &stopIteration);
 
-    const gpu::KernelDescriptor adamStepDesc {
+    const gpu::KernelDescriptor optimiserStepDesc {
         .shader = {
-            .name = "adamstep",
+            .name = "optimiser",
             .entryPoint = "main",
-            .code = Utils::readFile("shaders/3d/adamstep_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/optimiser_3d.wgsl"),
             .workgroupSize = {1, 1, 1}
         },
         .outputBuffers = {
@@ -189,7 +190,7 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
 
 
     auto gradientDescentKernel  = context.makeKernel(gradientDescentDesc);
-    auto adamStepKernel = context.makeKernel(adamStepDesc);
+    auto adamStepKernel = context.makeKernel(optimiserStepDesc);
 
     float minSSD = std::numeric_limits<float>::max();
 
@@ -269,7 +270,7 @@ SingleLevelResult registerAtSingleResolution(
     int maxIterations)
 {
     // Setup Adam with 6 parameters
-    std::vector<AdamOptimizer::Parameter> parameters = {
+    std::vector<AdaBeliefOptimiser::Parameter> parameters = {
         {.value = transformationParams.alpha, .learning_rate = rotationLearningRate },
         {.value = transformationParams.beta,  .learning_rate = rotationLearningRate },
         {.value = transformationParams.gamma, .learning_rate = rotationLearningRate },
@@ -277,7 +278,7 @@ SingleLevelResult registerAtSingleResolution(
         {.value = transformationParams.ty,    .learning_rate = translationLearningRate },
         {.value = transformationParams.tz,    .learning_rate = translationLearningRate }
     };
-    AdamOptimizer optimizer(parameters);
+    AdaBeliefOptimiser optimizer(parameters);
 
     const gpu::WorkgroupGrid workgrid {
         .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,

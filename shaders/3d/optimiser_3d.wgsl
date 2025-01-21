@@ -1,11 +1,11 @@
 // This shader updates the transform of the input 3D texture using the SSD and gradients from previous shader.
-// To do this we will employ an Adam optimizer to update the parameters of the transform.
+// To do this we will employ an AdaBelief optimizer to update the parameters of the transform.
 
 const MAX_ITERATIONS: u32 = 500;
-const NUM_ADAM_PARAMETERS: u32 = 6;
-const ADAM_BETA1: f32 = 0.7;
-const ADAM_BETA2: f32 = 0.9999;
-const ADAM_EPSILON: f32 = 1e-8;
+const NUM_PARAMETERS: u32 = 6;
+const BETA1: f32 = 0.7;
+const BETA2: f32 = 0.9999;
+const EPSILON: f32 = 1e-8;
 
 struct TransformationParameters {
     alpha: f32, // rotation around z-axis
@@ -27,14 +27,14 @@ struct SSDGradients {
 };
 
 
-struct AdamState {
-    learning_rates: array<f32, NUM_ADAM_PARAMETERS>,
-    firstMoments: array<f32, NUM_ADAM_PARAMETERS>,
-    secondMoments: array<f32, NUM_ADAM_PARAMETERS>,
+struct OptimiserState {
+    learning_rates: array<f32, NUM_PARAMETERS>,
+    firstMoments: array<f32, NUM_PARAMETERS>,
+    secondMoments: array<f32, NUM_PARAMETERS>,
 };
 
 @group(0) @binding(0) var<storage, read_write> inputGradientValues: SSDGradients;
-@group(0) @binding(1) var<storage, read_write> adamState: AdamState;
+@group(0) @binding(1) var<storage, read_write> optimiserState: OptimiserState;
 @group(0) @binding(2) var<storage, read_write> transformParams: TransformationParameters;
 @group(0) @binding(3) var<storage, read_write> minSSD: f32;
 @group(0) @binding(4) var<storage, read_write> minTransformParams: TransformationParameters;
@@ -43,7 +43,7 @@ struct AdamState {
 @group(0) @binding(7) var<storage, read_write> stop: u32;
 
 
-// A single thread will update the parameters using Adam optimizer
+// A single thread will update the parameters
 @compute @workgroup_size(1)
 fn main() {
     if(stop > 0u) {
@@ -65,18 +65,19 @@ fn main() {
     // Update the ssd history
     currentIteration += 1u;
 
-    let gradients = array<f32, NUM_ADAM_PARAMETERS>(dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz);
-    var newTransformParams = array<f32, NUM_ADAM_PARAMETERS>(
+    let gradients = array<f32, NUM_PARAMETERS>(dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz);
+    var newTransformParams = array<f32, NUM_PARAMETERS>(
         transformParams.alpha, transformParams.beta, transformParams.gamma,
         transformParams.tx, transformParams.ty, transformParams.tz
     );
-    for(var i = 0u; i < NUM_ADAM_PARAMETERS; i = i + 1u) {
-        adamState.firstMoments[i] = ADAM_BETA1 * adamState.firstMoments[i] + (1.0 - ADAM_BETA1) * gradients[i];
-        adamState.secondMoments[i] = ADAM_BETA2 * adamState.secondMoments[i] + (1.0 - ADAM_BETA2) * gradients[i] * gradients[i];
-
-        let firstMomentBiasCorrected = adamState.firstMoments[i] / (1.0 - pow(ADAM_BETA1, f32(currentIteration)));
-        let secondMomentBiasCorrected = adamState.secondMoments[i] / (1.0 - pow(ADAM_BETA2, f32(currentIteration)));
-        newTransformParams[i] -= adamState.learning_rates[i] * firstMomentBiasCorrected / (sqrt(secondMomentBiasCorrected) + ADAM_EPSILON);
+    for(var i = 0u; i < NUM_PARAMETERS; i = i + 1u) {
+        // adabelief optimizer
+        optimiserState.firstMoments[i] = BETA1 * optimiserState.firstMoments[i] + (1.0 - BETA1) * gradients[i];
+        let diff = gradients[i] - optimiserState.firstMoments[i];
+        optimiserState.secondMoments[i] = BETA2 * optimiserState.secondMoments[i] + (1.0 - BETA2) * diff * diff;
+        let firstMomentBiasCorrected = optimiserState.firstMoments[i] / (1.0 - pow(BETA1, f32(currentIteration)));
+        let secondMomentBiasCorrected = optimiserState.secondMoments[i] / (1.0 - pow(BETA2, f32(currentIteration)));
+        newTransformParams[i] -= optimiserState.learning_rates[i] * (firstMomentBiasCorrected / (sqrt(secondMomentBiasCorrected) + EPSILON));
     }
 
     transformParams.alpha = newTransformParams[0];

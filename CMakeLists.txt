@@ -16,6 +16,7 @@ add_executable(GPUReg main_3d.cpp)
 
 add_library(GPURegLib STATIC
     adamoptimiser.h adamoptimiser.cpp
+    adabeliefoptimiser.h adabeliefoptimiser.cpp
     gpu.h gpu.cpp
     utils.h utils.cpp
     image.h image.cpp
