@@ -1,5 +1,6 @@
 #include "gpu.h"
 #include "image.h"
+#include "scopedtimer.h"
 #include "utils.h"
 
 #include "spdlog/spdlog.h"
@@ -172,6 +173,7 @@ WorkgroupGrid WorkgroupGrid::ForOneWorkUnitPerThread(uint32_t totalWorksizeX,
 
 Context Context::newContext()
 {
+    ScopedTimer timer("WebGPU Context Initialisation");
     using namespace std::string_literals;
 
     Context context;
