@@ -288,6 +288,26 @@ SingleLevelResult registerAtSingleResolution(
     auto transformationParamsBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
     context.writeToBuffer(transformationParamsBuffer, &transformationParams);
 
+    // Compute gradient texture
+    gpu::Texture gradientTexture = context.makeEmptyTexture({
+        .size = sourceTexture.size,
+        .format = gpu::TextureFormat::RGBA16Float,
+        .usage = gpu::ResourceUsage::ReadWrite
+    });
+
+    const gpu::KernelDescriptor textureGradientDesc {
+        .shader = {
+            .name = "texturegradient",
+            .entryPoint = "main",
+            .code = Utils::readFile("shaders/3d/texturegradient_3d.wgsl"),
+            .workgroupSize = workgroupSize
+        },
+        .inputTextures = { sourceTexture },
+        .outputTextures = { gradientTexture }
+    };
+    const gpu::Kernel textureGradientKernel = context.makeKernel(textureGradientDesc);
+    context.dispatchKernel(textureGradientKernel, workgrid);
+
     SSDGradients ssdGradients;
 
     // Size of array of SSD gradients is the number of workgroups in the grid times size of SSDGradients struct
@@ -304,7 +324,7 @@ SingleLevelResult registerAtSingleResolution(
             .workgroupSize = workgroupSize
         },
         .inputBuffers = { transformationParamsBuffer },
-        .inputTextures  = { targetTexture, sourceTexture },
+        .inputTextures  = { targetTexture, sourceTexture, gradientTexture },
         .outputBuffers  = { ssdGradientsBuffer },
         .samplers       = { context.makeLinearSampler() }
     };

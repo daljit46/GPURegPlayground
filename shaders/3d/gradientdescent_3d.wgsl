@@ -25,8 +25,9 @@ struct SSDGradients {
 @group(0) @binding(0) var<storage, read> params: TransformationParameters;
 @group(0) @binding(1) var targetImage: texture_3d<f32>;
 @group(0) @binding(2) var movingImage: texture_3d<f32>;
-@group(0) @binding(3) var<storage, read_write> ssdGrads: array<SSDGradients>;
-@group(0) @binding(4) var linearSampler: sampler;
+@group(0) @binding(3) var gradientImage: texture_3d<f32>;
+@group(0) @binding(4) var<storage, read_write> ssdGrads: array<SSDGradients>;
+@group(0) @binding(5) var linearSampler: sampler;
 
 const workgroupSize = vec3<u32>({{workgroup_size}});
 const workgroupInvocations = workgroupSize.x * workgroupSize.y * workgroupSize.z;
@@ -92,14 +93,7 @@ fn main(
         let transformed = mat * voxelCenter + vec3<f32>(params.tx, params.ty, params.tz);
         let movingValue = textureSampleLevel(movingImage, linearSampler, transformed / dim, 0).r;
         let offset = vec3<f32>(1.0, 0.0, 0.0);
-        let gradMoving = vec3<f32>(
-            textureSampleLevel(movingImage, linearSampler, (transformed + offset) / dim, 0).r -
-            textureSampleLevel(movingImage, linearSampler, (transformed - offset) / dim, 0).r,
-            textureSampleLevel(movingImage, linearSampler, (transformed + offset.yxy) / dim, 0).r -
-            textureSampleLevel(movingImage, linearSampler, (transformed - offset.yxy) / dim, 0).r,
-            textureSampleLevel(movingImage, linearSampler, (transformed + offset.yyx) / dim, 0).r -
-            textureSampleLevel(movingImage, linearSampler, (transformed - offset.yyx) / dim, 0).r
-        )/2.0;
+        let gradMoving = textureSampleLevel(gradientImage, linearSampler, transformed / dim, 0).rgb;
 
         let error = movingValue - textureLoad(targetImage, id, 0).r;
 

@@ -106,6 +106,8 @@ wgpu::TextureFormat convertFormatToWGPU(TextureFormat format)
     case TextureFormat::R8Unorm: return wgpu::TextureFormat::R8Unorm;
     case TextureFormat::R32Float: return wgpu::TextureFormat::R32Float;
     case TextureFormat::RGBA8Unorm: return wgpu::TextureFormat::RGBA8Unorm;
+    case TextureFormat::RGBA16Float: return wgpu::TextureFormat::RGBA16Float;
+    case TextureFormat::RGBA32Float: return wgpu::TextureFormat::RGBA32Float;
     default: return wgpu::TextureFormat::Undefined;
     }
 }

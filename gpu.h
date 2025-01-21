@@ -21,7 +21,9 @@ enum class ResourceUsage {
 enum class TextureFormat {
     R8Unorm,
     R32Float,
-    RGBA8Unorm
+    RGBA8Unorm,
+    RGBA16Float,
+    RGBA32Float
 };
 
 struct TextureSize {
