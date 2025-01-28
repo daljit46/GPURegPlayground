@@ -753,3 +753,50 @@ TEST_F(ShaderTest, Downsample3D) {
 
     EXPECT_LT(meanDifference(cpuOutput, gpuOutputData) / 255.0, 5e-3F);
 }
+
+TEST_F(ShaderTest, ComputeMean3D) {
+    auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
+    const gpu::Texture inputTexture = wgpuContext.makeTextureFromHostNifti(brainImage);
+    const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
+
+    // Output buffer of compute_mean shader is an intermediate array of floats
+    // that needs to be reduce to a single float
+    const gpu::WorkgroupSize workgroupSize { 8, 8, 4 };
+    const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
+        brainImage.width, brainImage.height, brainImage.depth, workgroupSize
+    );
+    const uint32_t intermediateBufferSize = workgroupGrid.totalCount();
+    const gpu::DataBuffer intermediateBuffer = wgpuContext.makeEmptyBuffer(intermediateBufferSize * sizeof(float));
+    const std::string shaderSource = Utils::readFile("shaders/3d/compute_mean_3d.wgsl");
+    const gpu::KernelDescriptor computeMeanDesc {
+        .shader = {
+            .name = "compute_mean_3d",
+            .entryPoint = "main",
+            .code = shaderSource,
+            .workgroupSize = workgroupSize
+        },
+        .inputTextures = { inputTexture },
+        .outputBuffers = { intermediateBuffer }
+    };
+
+    const gpu::Kernel computeMeanKernel = wgpuContext.makeKernel(computeMeanDesc);
+    wgpuContext.dispatchKernel(computeMeanKernel, workgroupGrid);
+
+    // Perform the reduction on CPU for comparison
+    std::vector<float> intermediateData(intermediateBufferSize);
+    wgpuContext.downloadBuffer(intermediateBuffer, intermediateData.data());
+    const float gpuMean = std::accumulate(intermediateData.begin(), intermediateData.end(), 0.0f) / numberOfVoxels;
+
+    float cpuMean = 0.0f;
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                cpuMean += getPixel3D(x, y, z, brainImage) / 256.0F;
+            }
+        }
+    }
+    cpuMean /= numberOfVoxels;
+
+    EXPECT_NEAR(cpuMean, gpuMean, 1e-2);
+}
+
