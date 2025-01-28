@@ -128,7 +128,7 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
         .shader = {
             .name = "gradientdescent",
             .entryPoint = "main",
-            .code = Utils::readFile("shaders/3d/gradientdescent_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/ssd/gradientdescent_3d.wgsl"),
             .workgroupSize = workgroupSize
         },
         .inputBuffers = { transformationBuffer },
@@ -173,7 +173,7 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
         .shader = {
             .name = "optimiser",
             .entryPoint = "main",
-            .code = Utils::readFile("shaders/3d/optimiser_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/ssd/optimiser_3d.wgsl"),
             .workgroupSize = {1, 1, 1}
         },
         .outputBuffers = {
@@ -301,7 +301,7 @@ SingleLevelResult registerAtSingleResolution(
         .shader = {
             .name = "gradientdescent",
             .entryPoint = "main",
-            .code = Utils::readFile("shaders/3d/gradientdescent_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/ssd/gradientdescent_3d.wgsl"),
             .workgroupSize = workgroupSize
         },
         .inputBuffers = { transformationParamsBuffer },
