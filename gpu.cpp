@@ -88,6 +88,18 @@ void getAdapterInfo(gpu::Context& context)
     context.limits.maxWorkgroupCountY = supportedLimits.limits.maxComputeWorkgroupSizeY;
 }
 
+
+wgpu::ShaderModule makeShaderModule(const std::string &name, const std::string &code, const gpu::Context& context)
+{
+    wgpu::ShaderModuleWGSLDescriptor wgslDescriptor {};
+    wgslDescriptor.code = code.c_str();
+    wgpu::ShaderModuleDescriptor descriptor {};
+    descriptor.nextInChain = &wgslDescriptor;
+    descriptor.label = name.c_str();
+
+    return context.device.CreateShaderModule(&descriptor);
+}
+
 wgpu::TextureUsage convertUsageToWGPU(ResourceUsage usage)
 {
     switch(usage) {
@@ -566,7 +578,7 @@ Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor) const
         .label = computePipelineLabel.c_str(),
         .layout = pipelineLayout,
         .compute = wgpu::ProgrammableStageDescriptor {
-            .module = makeShaderModule(kernelDescriptor.shader.name, shaderCode),
+            .module = makeShaderModule(kernelDescriptor.shader.name, shaderCode, *this),
             .entryPoint = kernelDescriptor.shader.entryPoint.c_str()
         },
     };

@@ -127,7 +127,6 @@ struct Context {
     void downloadBuffers(const std::vector<BufferMappingPair> &bufferMappingPairs) const;
     void writeToBuffer(const DataBuffer& dataBuffer, const void *data) const;
 
-    wgpu::ShaderModule makeShaderModule(const std::string& name, const std::string& code) const;
     wgpu::Sampler makeLinearSampler() const;
 
     Kernel makeKernel(const KernelDescriptor &kernelDescriptor) const;
