@@ -14,6 +14,7 @@
 #include <vector>
 #include "gpu.h"
 #include "spdlog/spdlog.h"
+#include "transform.h"
 #include "utils.h"
 #include "image.h"
 #include "reduce.h"
@@ -800,3 +801,61 @@ TEST_F(ShaderTest, ComputeMean3D) {
     EXPECT_NEAR(cpuMean, gpuMean, 1e-2);
 }
 
+TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
+{
+    NiftiTransformParams transformationParameters {
+        .alpha = 0.2F, .beta = 0.3F, .gamma = 0.1F,
+        .tx = 1.1F, .ty = -10.0F, .tz = -20.0F
+    };
+    auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
+    const gpu::Texture inputTexture = wgpuContext.makeTextureFromHostNifti(brainImage);
+    const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
+
+    // Output buffer of compute_mean shader is an intermediate array of floats
+    // that needs to be reduce to a single float
+    const gpu::WorkgroupSize workgroupSize { 8, 8, 4 };
+    const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
+        brainImage.width, brainImage.height, brainImage.depth, workgroupSize
+        );
+    const uint32_t intermediateBufferSize = workgroupGrid.totalCount();
+    const gpu::DataBuffer intermediateBuffer = wgpuContext.makeEmptyBuffer(intermediateBufferSize * sizeof(float));
+    const std::string shaderSource = Utils::readFile("shaders/3d/compute_mean_transformed_3d.wgsl");
+
+    const gpu::DataBuffer transformationParametersBuffer =
+        wgpuContext.makeEmptyBuffer(sizeof(NiftiTransformParams));
+    wgpuContext.writeToBuffer(transformationParametersBuffer, &transformationParameters);
+
+    const gpu::KernelDescriptor computeMeanDesc {
+        .shader = {
+            .name = "compute_mean_3d",
+            .entryPoint = "main",
+            .code = shaderSource,
+            .workgroupSize = workgroupSize
+        },
+        .inputBuffers = { transformationParametersBuffer },
+        .inputTextures = { inputTexture },
+        .outputBuffers = { intermediateBuffer },
+        .samplers = { wgpuContext.makeLinearSampler() },
+    };
+
+    const gpu::Kernel computeMeanKernel = wgpuContext.makeKernel(computeMeanDesc);
+    wgpuContext.dispatchKernel(computeMeanKernel, workgroupGrid);
+
+    // Perform the reduction on CPU for comparison
+    std::vector<float> intermediateData(intermediateBufferSize);
+    wgpuContext.downloadBuffer(intermediateBuffer, intermediateData.data());
+    const float gpuMean = std::accumulate(intermediateData.begin(), intermediateData.end(), 0.0f) / numberOfVoxels;
+
+    float cpuMean = 0.0f;
+    auto transformedImage = transformNifti(brainImage, transformationParameters);
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                cpuMean += getPixel3D(x, y, z, transformedImage) / 256.0F;
+            }
+        }
+    }
+    cpuMean /= numberOfVoxels;
+
+    EXPECT_NEAR(cpuMean, gpuMean, 1e-2);
+}
