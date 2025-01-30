@@ -395,10 +395,9 @@ SingleLevelResult registerAtSingleResolution(
 int main(int argc, char **argv)
 {
     std::vector<std::string> appArgs(argv, argv + argc);
-    bool gpuOnlyVersion = false;
-    if (std::find(appArgs.begin(), appArgs.end(), "--gpuonly") != appArgs.end()) {
-        gpuOnlyVersion = true;
-    }
+    bool gpuOnlyVersion = std::find(appArgs.begin(), appArgs.end(), "--gpuonly") != appArgs.end();
+    bool graphResults = std::find(appArgs.begin(), appArgs.end(), "--graph") != appArgs.end();
+
     if (std::find(appArgs.begin(), appArgs.end(), "--trace") != appArgs.end()) {
         spdlog::set_level(spdlog::level::trace);
     }
@@ -537,12 +536,14 @@ int main(int argc, char **argv)
     spdlog::info("  Ty:    {}", finalTy - targetTy);
     spdlog::info("  Tz:    {}", finalTz - targetTz);
 
-    // Plot the global SSD history
-    // matplot::plot(globalSSDHistory);
-    // matplot::title("SSD History (Multi-Level)");
-    // matplot::xlabel("Iteration");
-    // matplot::ylabel("SSD");
-    // matplot::show();
+    if(graphResults) {
+        // Plot the global SSD history
+        matplot::plot(globalSSDHistory);
+        matplot::title("SSD History (Multi-Level)");
+        matplot::xlabel("Iteration");
+        matplot::ylabel("SSD");
+        matplot::show();
+    }
 
     return 0;
 }
