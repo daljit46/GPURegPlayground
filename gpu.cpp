@@ -425,16 +425,6 @@ DataBuffer Context::makeEmptyBuffer(size_t size) const
     return buffer;
 }
 
-wgpu::ShaderModule Context::makeShaderModule(const std::string &name, const std::string &code) const
-{
-    wgpu::ShaderModuleWGSLDescriptor wgslDescriptor {};
-    wgslDescriptor.code = code.c_str();
-    wgpu::ShaderModuleDescriptor descriptor {};
-    descriptor.nextInChain = &wgslDescriptor;
-    descriptor.label = name.c_str();
-
-    return device.CreateShaderModule(&descriptor);
-}
 
 Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor) const
 {
