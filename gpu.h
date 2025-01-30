@@ -56,6 +56,8 @@ struct WorkgroupSize {
     uint32_t x = 16;
     uint32_t y = 16;
     uint32_t z = 1;
+
+    uint32_t totalCount() const { return x * y * z; }
 };
 
 struct WorkgroupGrid {
