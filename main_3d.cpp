@@ -8,6 +8,8 @@
 #include "transform.h"
 
 #include "reduce.h"
+#include <array>
+#include <cmath>
 #include <matplot/matplot.h>
 #include <vector>
 
@@ -42,8 +44,58 @@ struct SSDGradients {
             .dssd_dtz = dssd_dtz + other.dssd_dtz
         };
     }
-
 };
+
+
+// Let I=I(x,y,z) be the target image and J = J(T(x, y, z)) be the moving image
+// Let I' = I - mean(I) and J' = J - mean(J)
+// NOTE: J = J(T(x,y,z)) where T is the transformation function
+// NCC = A / sqrt(B * C) where
+// A = sum(I' * J')
+// B = sum(I' * I')
+// C = sum(J' * J')
+// The sum is over all voxels in the images.
+// dNCC/dp_k = 1/[sqrt(B) * C^3/2] * [dA/dp_k * C - 0.5 A * C * dC/dp_k] where
+// p_k is the k-th transformation parameter
+// where dA/dp_k = sum[I' * (gradJ) dotted dT/dp_k - d/dp_k(mean(J))]
+// where dC/dp_k = 2 * sum[J' * (gradJ dotted dT/dp_k - d/dp_k(mean(J))]
+// For simplicity, we will assume that d/dp_k(mean(J)) = 0 even though this is not strictly true
+
+struct NCCPartialSums {
+    float sumA = 0;
+    float sumB = 0;
+    float sumC = 0;
+
+    float dA_dalpha = 0;
+    float dA_dbeta  = 0;
+    float dA_dgamma = 0;
+    float dA_dtx    = 0;
+    float dA_dty    = 0;
+    float dA_dtz    = 0;
+
+    float dC_dalpha = 0;
+    float dC_dbeta  = 0;
+    float dC_dgamma = 0;
+    float dC_dtx    = 0;
+    float dC_dty    = 0;
+    float dC_dtz    = 0;
+
+    NCCPartialSums operator+(const NCCPartialSums& other) {
+        return {
+            .sumA = sumA + other.sumA,
+            .sumB = sumB + other.sumB,
+            .sumC = sumC + other.sumC,
+            .dA_dalpha = dA_dalpha + other.dA_dalpha,
+            .dA_dbeta  = dA_dbeta  + other.dA_dbeta,
+            .dA_dgamma = dA_dgamma + other.dA_dgamma,
+            .dA_dtx    = dA_dtx    + other.dA_dtx,
+            .dA_dty    = dA_dty    + other.dA_dty,
+            .dA_dtz    = dA_dtz    + other.dA_dtz,
+        };
+    }
+};
+
+
 gpu::Texture downsample3DTexture(
     gpu::Context &context,
     const gpu::Texture &inputTexture,
@@ -392,14 +444,202 @@ SingleLevelResult registerAtSingleResolution(
 }
 
 
+SingleLevelResult registerAtSingleResolutionNCC(
+    gpu::Context &context,
+    const gpu::Texture &sourceTexture,
+    const gpu::Texture &targetTexture,
+    TransformationParameters &transformationParams,
+    const gpu::WorkgroupSize &workgroupSize,
+    float rotationLearningRate,
+    float translationLearningRate,
+    int maxIterations
+)
+{
+    // Plan:
+    // 1. Compute the mean of the target image
+    // In the iteration loop:
+    // - Compute the mean of the moving image
+    // - Dispatch the kernel to compute the NCC partial sums
+    // - Download the partial sums on CPU and compute the gradients
+    // - Update the transformation parameters
+    // - Repeat
+
+
+    // Setup Adam with 6 parameters
+    const std::vector<AdaBeliefOptimiser::Parameter> parameters = {
+        {.value = transformationParams.alpha, .learning_rate = rotationLearningRate },
+        {.value = transformationParams.beta,  .learning_rate = rotationLearningRate },
+        {.value = transformationParams.gamma, .learning_rate = rotationLearningRate },
+        {.value = transformationParams.tx,    .learning_rate = translationLearningRate },
+        {.value = transformationParams.ty,    .learning_rate = translationLearningRate },
+        {.value = transformationParams.tz,    .learning_rate = translationLearningRate }
+    };
+    AdaBeliefOptimiser optimizer(parameters);
+
+    const gpu::WorkgroupGrid workgrid {
+        .x = (sourceTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
+        .y = (sourceTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
+        .z = (sourceTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
+    };
+
+    NCCPartialSums nccPartialSums;
+    const size_t nccPartialSumsSize = sizeof(NCCPartialSums) * workgrid.totalCount();
+    gpu::DataBuffer nccPartialSumsBuffer = context.makeEmptyBuffer(nccPartialSumsSize);
+    gpu::DataBuffer targetMeanBuffer = context.makeEmptyBuffer(sizeof(float));
+    gpu::DataBuffer movingMeanBuffer = context.makeEmptyBuffer(sizeof(float));
+    gpu::DataBuffer transformationParamsBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
+    context.writeToBuffer(transformationParamsBuffer, &transformationParams);
+
+    // meanIntermediateBufferSize needs to be a multiple of workgroupSize
+    const size_t reductionWorkgroupSize = 256;
+    const size_t meanIntermediateBufferSize = sizeof(float) * Utils::nextMultipleOf(workgrid.totalCount(), reductionWorkgroupSize);
+    gpu::DataBuffer targetMeanIntermediateBuffer = context.makeEmptyBuffer(meanIntermediateBufferSize);
+    const gpu::KernelDescriptor targetMeanKernelDesc {
+        .shader = {
+            .code = Utils::readFile("shaders/3d/compute_mean_3d.wgsl"),
+            .workgroupSize = workgroupSize,
+        },
+        .inputTextures = { targetTexture    },
+        .outputBuffers = { targetMeanIntermediateBuffer },
+    };
+
+    const gpu::ReductionDescriptor targetMeanReductionDesc {
+        .workgroupSize = reductionWorkgroupSize,
+        .unitSize = 1,
+        .data = targetMeanIntermediateBuffer,
+        .result = targetMeanBuffer
+    };
+    gpu::ReductionHelper targetMeanReductionHelper(targetMeanReductionDesc, context);
+    targetMeanReductionHelper.dispatch(context);
+
+    gpu::DataBuffer sourceMeanIntermediateBuffer = context.makeEmptyBuffer(meanIntermediateBufferSize);
+
+    const gpu::KernelDescriptor movingMeanKernelDesc {
+        .shader = {
+            .code = Utils::readFile("shaders/3d/compute_mean_3d.wgsl"),
+            .workgroupSize = workgroupSize,
+        },
+        .inputTextures = { sourceTexture },
+        .outputBuffers = { sourceMeanIntermediateBuffer },
+    };
+
+    const gpu::ReductionDescriptor movingMeanReductionDesc {
+        .workgroupSize = 256,
+        .unitSize = 1,
+        .data = sourceMeanIntermediateBuffer,
+        .result = movingMeanBuffer
+    };
+    gpu::ReductionHelper movingMeanReductionHelper(movingMeanReductionDesc, context);
+
+    const gpu::KernelDescriptor updateGradientsDesc {
+        .shader = {
+            .name = "Update Gradients NCC",
+            .code = Utils::readFile("shaders/3d/ncc/updategradients_ncc_3d.wgsl"),
+            .workgroupSize = workgroupSize
+        },
+        .inputBuffers   = { transformationParamsBuffer, targetMeanBuffer, movingMeanBuffer },
+        .inputTextures  = { targetTexture, sourceTexture },
+        .outputBuffers  = { nccPartialSumsBuffer },
+        .samplers       = { context.makeLinearSampler() }
+    };
+
+    const gpu::Kernel updateGradientsKernel = context.makeKernel(updateGradientsDesc);
+    float maxNCC = std::numeric_limits<float>::lowest();
+    std::vector<float> nccHistory;
+    nccHistory.reserve(maxIterations);
+
+    for(int i = 0; i < maxIterations; ++i) {
+        context.writeToBuffer(transformationParamsBuffer, &transformationParams);
+
+        nccPartialSums = {};
+        movingMeanReductionHelper.dispatch(context);
+
+        context.dispatchKernel(updateGradientsKernel, workgrid);
+        std::vector<NCCPartialSums> nccPartialSumsVec(workgrid.totalCount());
+        context.downloadBuffer(nccPartialSumsBuffer, nccPartialSumsVec.data());
+        nccPartialSums = std::reduce(nccPartialSumsVec.begin(), nccPartialSumsVec.end(), NCCPartialSums{});
+
+        const float ncc = nccPartialSums.sumA / std::sqrt(nccPartialSums.sumB * nccPartialSums.sumC);
+        nccHistory.push_back(ncc);
+        if(ncc > maxNCC) {
+            maxNCC = ncc;
+        }
+
+        const float dNCC_dalpha = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
+            (nccPartialSums.dA_dalpha * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dalpha);
+
+        const float dNCC_dbeta = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
+            (nccPartialSums.dA_dbeta * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dbeta);
+        const float dNCC_dgamma = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
+            (nccPartialSums.dA_dgamma * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dgamma);
+        const float dNCC_dtx = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
+            (nccPartialSums.dA_dtx * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dtx);
+        const float dNCC_dty = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
+            (nccPartialSums.dA_dty * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dty);
+        const float dNCC_dtz = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
+            (nccPartialSums.dA_dtz * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dtz);
+
+        spdlog::info(
+            "Iteration: {} | NCC: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
+            i,
+            ncc,
+            transformationParams.alpha,
+            transformationParams.beta,
+            transformationParams.gamma,
+            transformationParams.tx,
+            transformationParams.ty,
+            transformationParams.tz
+            );
+
+        auto newParams = optimizer.step({
+            -dNCC_dalpha, -dNCC_dbeta, -dNCC_dgamma, -dNCC_dtx, -dNCC_dty, -dNCC_dtz
+        });
+
+        transformationParams.alpha = newParams[0].value;
+        transformationParams.beta  = newParams[1].value;
+        transformationParams.gamma = newParams[2].value;
+        transformationParams.tx    = newParams[3].value;
+        transformationParams.ty    = newParams[4].value;
+        transformationParams.tz    = newParams[5].value;
+
+        if(i > 10) {
+            auto mean = std::accumulate(nccHistory.end()-10, nccHistory.end(), 0.0F) / 10;
+            if (std::abs(ncc - mean) < 0.001) {
+                break;
+            }
+        }
+    }
+
+    SingleLevelResult result;
+    result.finalSSD = maxNCC;
+    result.ssdHistory = nccHistory;
+    result.alpha = transformationParams.alpha;
+    result.beta  = transformationParams.beta;
+    result.gamma = transformationParams.gamma;
+    result.tx    = transformationParams.tx;
+    result.ty    = transformationParams.ty;
+    result.tz    = transformationParams.tz;
+
+    return result;
+}
+
 int main(int argc, char **argv)
 {
+    enum class Metric { SSD, NCC };
+
     std::vector<std::string> appArgs(argv, argv + argc);
     bool gpuOnlyVersion = std::find(appArgs.begin(), appArgs.end(), "--gpuonly") != appArgs.end();
     bool graphResults = std::find(appArgs.begin(), appArgs.end(), "--graph") != appArgs.end();
 
     if (std::find(appArgs.begin(), appArgs.end(), "--trace") != appArgs.end()) {
         spdlog::set_level(spdlog::level::trace);
+    }
+
+    Metric metric = Metric::SSD;
+    if(std::find(appArgs.begin(), appArgs.end(), "--ncc") != appArgs.end()) {
+        spdlog::info("Using NCC as the metric");
+    } else {
+        spdlog::info("Using SSD as the metric");
     }
 
     ScopedTimer timer ("main");
@@ -470,19 +710,30 @@ int main(int argc, char **argv)
     {
         spdlog::info("\n\n=== Registering at pyramid level {} (0=coarse, 3=full) ===", level);
         auto result = [&]() {
-            if(gpuOnlyVersion) {
-                return registerAtSingleResolutionGPUOnly(
-                    context,
-                    sourcePyramid[level],
-                    targetPyramid[level],
-                    transformationParams, // updated in place
-                    workgroupSize,
-                    angleLearningRate / std::pow(2, level + 1),
-                    translationLearningRate / std::pow(2, level + 1),
-                    maxIterations
-                );
+            if(metric == Metric::SSD) {
+                return gpuOnlyVersion ?
+                    registerAtSingleResolutionGPUOnly(
+                        context,
+                        sourcePyramid[level],
+                        targetPyramid[level],
+                        transformationParams, // updated in place
+                        workgroupSize,
+                        angleLearningRate / std::pow(2, level + 1),
+                        translationLearningRate / std::pow(2, level + 1),
+                        maxIterations
+                    ) :
+                    registerAtSingleResolution(
+                        context,
+                        sourcePyramid[level],
+                        targetPyramid[level],
+                        transformationParams, // updated in place
+                        workgroupSize,
+                        angleLearningRate / std::pow(2, level + 1),
+                        translationLearningRate / std::pow(2, level + 1),
+                        maxIterations
+                    );
             }
-            else return registerAtSingleResolution(
+            else return registerAtSingleResolutionNCC(
                 context,
                 sourcePyramid[level],
                 targetPyramid[level],
