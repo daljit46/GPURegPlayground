@@ -20,7 +20,7 @@ struct TransformationParameters {
 // B = sum(I' * I')
 // C = sum(J' * J')
 // The sum is over all voxels in the images.
-// dNCC/dp_k = 1/[sqrt(B) * C^3/2] * [dA/dp_k * C - 0.5 A * C * dC/dp_k] where
+// dNCC/dp_k = 1/[sqrt(B) * C^3/2] * [dA/dp_k * C - 0.5 A * dC/dp_k] where
 // p_k is the k-th transformation parameter
 // where dA/dp_k = sum[I' * (gradJ) dotted dT/dp_k - d/dp_k(mean(J))]
 // where dC/dp_k = 2 * sum[J' * (gradJ dotted dT/dp_k - d/dp_k(mean(J))]
