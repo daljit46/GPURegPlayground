@@ -28,4 +28,6 @@ T degreesToRadians(T degrees) {
     return degrees * 3.14159265358979323846 / 180.0;
 }
 
+uint32_t nextMultipleOf(uint32_t value, uint32_t multiple);
+
 }

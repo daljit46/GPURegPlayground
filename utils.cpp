@@ -131,3 +131,8 @@ void Utils::saveToDisk(const NiftiImage &image, const std::filesystem::path &ima
         throw std::runtime_error("Failed to write NIfTI image: "s + imagePath.string());
     }
 }
+
+uint32_t Utils::nextMultipleOf(uint32_t value, uint32_t multiple)
+{
+    return ((value + multiple - 1) / multiple) * multiple;
+}
