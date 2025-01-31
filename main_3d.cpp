@@ -567,19 +567,31 @@ SingleLevelResult registerAtSingleResolutionNCC(
             maxNCC = ncc;
         }
 
-        const float dNCC_dalpha = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
-            (nccPartialSums.dA_dalpha * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dalpha);
+        // dNCC/dp_k = 1/[sqrt(B) * C^3/2] * [dA/dp_k * C - 0.5 A * C * dC/dp_k] where
 
-        const float dNCC_dbeta = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
-            (nccPartialSums.dA_dbeta * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dbeta);
-        const float dNCC_dgamma = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
-            (nccPartialSums.dA_dgamma * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dgamma);
-        const float dNCC_dtx = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
-            (nccPartialSums.dA_dtx * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dtx);
-        const float dNCC_dty = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
-            (nccPartialSums.dA_dty * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dty);
-        const float dNCC_dtz = 1.0F / (std::sqrt(nccPartialSums.sumB) * std::pow(nccPartialSums.sumC, 1.5F)) *
-            (nccPartialSums.dA_dtz * nccPartialSums.sumC - 0.5F * nccPartialSums.sumA * nccPartialSums.sumC * nccPartialSums.dC_dtz);
+        const float sumA = nccPartialSums.sumA;
+        const float sumB = nccPartialSums.sumB;
+        const float sumC = nccPartialSums.sumC;
+        const float dA_dalpha = nccPartialSums.dA_dalpha;
+        const float dA_dbeta  = nccPartialSums.dA_dbeta;
+        const float dA_dgamma = nccPartialSums.dA_dgamma;
+        const float dA_dtx    = nccPartialSums.dA_dtx;
+        const float dA_dty    = nccPartialSums.dA_dty;
+        const float dA_dtz    = nccPartialSums.dA_dtz;
+        const float dC_dalpha = nccPartialSums.dC_dalpha;
+        const float dC_dbeta  = nccPartialSums.dC_dbeta;
+        const float dC_dgamma = nccPartialSums.dC_dgamma;
+        const float dC_dtx    = nccPartialSums.dC_dtx;
+        const float dC_dty    = nccPartialSums.dC_dty;
+        const float dC_dtz    = nccPartialSums.dC_dtz;
+
+        const float denominmator = std::sqrt(sumB) * std::pow(sumC, 1.5F);
+        const float dNCC_dalpha = ( std::sqrt(sumC)*dA_dalpha - 0.5F*sumA*dC_dalpha ) / denominmator;
+        const float dNCC_dbeta  = ( std::sqrt(sumC)*dA_dbeta  - 0.5F*sumA*dC_dbeta  ) / denominmator;
+        const float dNCC_dgamma = ( std::sqrt(sumC)*dA_dgamma - 0.5F*sumA*dC_dgamma ) / denominmator;
+        const float dNCC_dtx    = ( std::sqrt(sumC)*dA_dtx    - 0.5F*sumA*dC_dtx    ) / denominmator;
+        const float dNCC_dty    = ( std::sqrt(sumC)*dA_dty    - 0.5F*sumA*dC_dty    ) / denominmator;
+        const float dNCC_dtz    = ( std::sqrt(sumC)*dA_dtz    - 0.5F*sumA*dC_dtz    ) / denominmator;
 
         spdlog::info(
             "Iteration: {} | NCC: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
