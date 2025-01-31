@@ -109,16 +109,15 @@ fn main(
             -cosAlpha * sinBeta * sinGamma + sinAlpha * cosGamma, -sinAlpha * sinBeta * sinGamma - cosAlpha * cosGamma, -cosBeta * sinGamma
         );
 
+        let voxelCentre = vec3<f32>(id.xyz) + vec3<f32>(0.5, 0.5, 0.5);
+        let transformed = mat * voxelCentre + vec3<f32>(params.tx, params.ty, params.tz);
         let targetIntensity = textureLoad(targetImage, id, 0).r;
-        let movingIntensity = textureSampleLevel(movingImage, linearSampler,
-                                (mat * vec3<f32>(id.xyz) + vec3<f32>(params.tx, params.ty, params.tz)) /
-                                vec3<f32>(dim), 0).r;
+        let movingIntensity = textureSampleLevel(movingImage, linearSampler, transformed / vec3<f32>(dim), 0).r;
+
         let IPrime = targetIntensity - targetMean / f32(dim.x * dim.y * dim.z);
         let JPrime = movingIntensity - movingMean / f32(dim.x * dim.y * dim.z);
 
         let offset = vec3<f32>(1.0, 0.0, 0.0);
-        let voxelCentre = vec3<f32>(id.xyz) + vec3<f32>(0.5, 0.5, 0.5);
-        let transformed = mat * voxelCentre + vec3<f32>(params.tx, params.ty, params.tz);
         let gradMoving = vec3<f32>(
             textureSampleLevel(movingImage, linearSampler, (transformed + offset.xyy) / vec3<f32>(dim), 0).r -
             textureSampleLevel(movingImage, linearSampler, (transformed - offset.xyy) / vec3<f32>(dim), 0).r,
