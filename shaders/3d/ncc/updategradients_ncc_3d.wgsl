@@ -128,9 +128,9 @@ fn main(
             textureSampleLevel(movingImage, linearSampler, (transformed - offset.yyx) / vec3<f32>(dim), 0).r
         ) * 0.5;
 
-        let dTDalpha = dmatDalpha * vec3<f32>(id.xyz);
-        let dTDbeta = dmatDbeta * vec3<f32>(id.xyz);
-        let dTDgamma = dmatDgamma * vec3<f32>(id.xyz);
+        let dTDalpha = dmatDalpha * voxelCentre;
+        let dTDbeta = dmatDbeta * voxelCentre;
+        let dTDgamma = dmatDgamma * voxelCentre;
 
         // gradJ dotted with dT/dp_k
         let dJDalpha = dot(gradMoving, dTDalpha);
