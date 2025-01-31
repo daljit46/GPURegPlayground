@@ -638,6 +638,7 @@ int main(int argc, char **argv)
     Metric metric = Metric::SSD;
     if(std::find(appArgs.begin(), appArgs.end(), "--ncc") != appArgs.end()) {
         spdlog::info("Using NCC as the metric");
+        metric = Metric::NCC;
     } else {
         spdlog::info("Using SSD as the metric");
     }
@@ -733,7 +734,7 @@ int main(int argc, char **argv)
                         maxIterations
                     );
             }
-            else return registerAtSingleResolutionNCC(
+            return registerAtSingleResolutionNCC(
                 context,
                 sourcePyramid[level],
                 targetPyramid[level],
