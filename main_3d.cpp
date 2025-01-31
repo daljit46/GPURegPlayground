@@ -622,7 +622,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
 
         if(i > 10) {
             auto mean = std::accumulate(nccHistory.end()-10, nccHistory.end(), 0.0F) / 10;
-            if (std::abs(ncc - mean) < 1e-4) {
+            if (std::abs(ncc - mean) < 1e-3) {
                 break;
             }
         }
