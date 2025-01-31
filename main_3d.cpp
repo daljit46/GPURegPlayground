@@ -502,6 +502,8 @@ SingleLevelResult registerAtSingleResolutionNCC(
         .inputTextures = { targetTexture    },
         .outputBuffers = { targetMeanIntermediateBuffer },
     };
+    gpu::Kernel targetMeanKernel = context.makeKernel(targetMeanKernelDesc);
+    context.dispatchKernel(targetMeanKernel, workgrid);
 
     const gpu::ReductionDescriptor targetMeanReductionDesc {
         .workgroupSize = reductionWorkgroupSize,
