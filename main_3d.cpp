@@ -518,11 +518,13 @@ SingleLevelResult registerAtSingleResolutionNCC(
 
     const gpu::KernelDescriptor movingMeanKernelDesc {
         .shader = {
-            .code = Utils::readFile("shaders/3d/compute_mean_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/compute_mean_transformed_3d.wgsl"),
             .workgroupSize = workgroupSize,
         },
+        .inputBuffers  = { transformationParamsBuffer },
         .inputTextures = { sourceTexture },
         .outputBuffers = { sourceMeanIntermediateBuffer },
+        .samplers      = { context.makeLinearSampler() }
     };
     gpu::Kernel movingMeanKernel = context.makeKernel(movingMeanKernelDesc);
 
