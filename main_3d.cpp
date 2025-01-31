@@ -522,6 +522,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
         .inputTextures = { sourceTexture },
         .outputBuffers = { sourceMeanIntermediateBuffer },
     };
+    gpu::Kernel movingMeanKernel = context.makeKernel(movingMeanKernelDesc);
 
     const gpu::ReductionDescriptor movingMeanReductionDesc {
         .workgroupSize = 256,
@@ -552,6 +553,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
         context.writeToBuffer(transformationParamsBuffer, &transformationParams);
 
         nccPartialSums = {};
+        context.dispatchKernel(movingMeanKernel, workgrid);
         movingMeanReductionHelper.dispatch(context);
 
         context.dispatchKernel(updateGradientsKernel, workgrid);
