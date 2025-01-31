@@ -55,7 +55,7 @@ struct SSDGradients {
 // B = sum(I' * I')
 // C = sum(J' * J')
 // The sum is over all voxels in the images.
-// dNCC/dp_k = 1/[sqrt(B) * C^3/2] * [dA/dp_k * C - 0.5 A * C * dC/dp_k] where
+// dNCC/dp_k = 1/[sqrt(B) * C^3/2] * [dA/dp_k * C - 0.5 A * dC/dp_k] where
 // p_k is the k-th transformation parameter
 // where dA/dp_k = sum[I' * (gradJ) dotted dT/dp_k - d/dp_k(mean(J))]
 // where dC/dp_k = 2 * sum[J' * (gradJ dotted dT/dp_k - d/dp_k(mean(J))]
@@ -588,12 +588,12 @@ SingleLevelResult registerAtSingleResolutionNCC(
         const float dC_dtz    = nccPartialSums.dC_dtz;
 
         const float denominmator = std::sqrt(sumB) * std::pow(sumC, 1.5F);
-        const float dNCC_dalpha = ( std::sqrt(sumC)*dA_dalpha - 0.5F*sumA*dC_dalpha ) / denominmator;
-        const float dNCC_dbeta  = ( std::sqrt(sumC)*dA_dbeta  - 0.5F*sumA*dC_dbeta  ) / denominmator;
-        const float dNCC_dgamma = ( std::sqrt(sumC)*dA_dgamma - 0.5F*sumA*dC_dgamma ) / denominmator;
-        const float dNCC_dtx    = ( std::sqrt(sumC)*dA_dtx    - 0.5F*sumA*dC_dtx    ) / denominmator;
-        const float dNCC_dty    = ( std::sqrt(sumC)*dA_dty    - 0.5F*sumA*dC_dty    ) / denominmator;
-        const float dNCC_dtz    = ( std::sqrt(sumC)*dA_dtz    - 0.5F*sumA*dC_dtz    ) / denominmator;
+        const float dNCC_dalpha = ( sumC*dA_dalpha - 0.5F*sumA*dC_dalpha ) / denominmator;
+        const float dNCC_dbeta  = ( sumC*dA_dbeta  - 0.5F*sumA*dC_dbeta  ) / denominmator;
+        const float dNCC_dgamma = ( sumC*dA_dgamma - 0.5F*sumA*dC_dgamma ) / denominmator;
+        const float dNCC_dtx    = ( sumC*dA_dtx    - 0.5F*sumA*dC_dtx    ) / denominmator;
+        const float dNCC_dty    = ( sumC*dA_dty    - 0.5F*sumA*dC_dty    ) / denominmator;
+        const float dNCC_dtz    = ( sumC*dA_dtz    - 0.5F*sumA*dC_dtz    ) / denominmator;
 
         spdlog::info(
             "Iteration: {} | NCC: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
