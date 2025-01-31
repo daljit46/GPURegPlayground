@@ -14,7 +14,9 @@ var<workgroup> localIntensities : array<f32, workgroupSize.x * workgroupSize.y *
 @compute @workgroup_size(workgroupSize.x, workgroupSize.y, workgroupSize.z)
 fn main(@builtin(global_invocation_id) id: vec3<u32>,
         @builtin(local_invocation_id) local_id: vec3<u32>,
-        @builtin(workgroup_id) workgroupId: vec3<u32>)
+        @builtin(workgroup_id) workgroupId: vec3<u32>,
+        @builtin(num_workgroups) numWorkgroups: vec3<u32>
+)
 {
     let coords : vec3<f32> = vec3<f32>(id.xyz);
     let dim = vec3<f32>(textureDimensions(inputTexture, 0));
@@ -39,7 +41,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>,
     }
 
     if(index == 0) {
-        let wgIndex = workgroupId.x + workgroupId.y * workgroupSize.x + workgroupId.z * workgroupSize.x * workgroupSize.y;
+        let wgIndex = workgroupId.x + workgroupId.y * numWorkgroups.x + workgroupId.z * numWorkgroups.x * numWorkgroups.y;
         outputArray[wgIndex] = localIntensities[0];
     }
 }
