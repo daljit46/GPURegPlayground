@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <matplot/matplot.h>
+#include <random>
 #include <vector>
 
 
@@ -648,6 +649,7 @@ int main(int argc, char **argv)
     std::vector<std::string> appArgs(argv, argv + argc);
     bool gpuOnlyVersion = std::find(appArgs.begin(), appArgs.end(), "--gpuonly") != appArgs.end();
     bool graphResults = std::find(appArgs.begin(), appArgs.end(), "--graph") != appArgs.end();
+    bool randomInitialisation = std::find(appArgs.begin(), appArgs.end(), "--random") != appArgs.end();
 
     if (std::find(appArgs.begin(), appArgs.end(), "--trace") != appArgs.end()) {
         spdlog::set_level(spdlog::level::trace);
@@ -665,12 +667,17 @@ int main(int argc, char **argv)
     auto context = gpu::Context::newContext();
 
     // Target transform
-    const float targetAlpha = Utils::degreesToRadians(10.0F);
-    const float targetBeta  = 0.4F;
-    const float targetGamma = -0.3F;
-    const float targetTx    = 10.0F;
-    const float targetTy    = 29.0F;
-    const float targetTz    = -23.0F;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> angleDist(-0.2, 0.2);
+    std::uniform_real_distribution<float> translationDist(-30.0, 30.0);
+
+    const float targetAlpha = randomInitialisation ? angleDist(gen) : 0.1F;
+    const float targetBeta  = randomInitialisation ? angleDist(gen) : 0.4F;
+    const float targetGamma = randomInitialisation ? angleDist(gen) : -0.3F;
+    const float targetTx    = randomInitialisation ? angleDist(gen) : 10.0F;
+    const float targetTy    = randomInitialisation ? angleDist(gen) : 29.0F;
+    const float targetTz    = randomInitialisation ? angleDist(gen) : -23.0F;
 
     spdlog::info("Target Alpha: {}", targetAlpha);
     spdlog::info("Target Beta: {}", targetBeta);
