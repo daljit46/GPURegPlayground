@@ -13,37 +13,38 @@ struct TransformationParameters {
 };
 
 // Let I=I(x,y,z) be the target image and J = J(T(x, y, z)) be the moving image
+// Let I' = I - mean(I) and J' = J - mean(J)
 // NOTE: J = J(T(x,y,z)) where T is the transformation function
 // NCC = A / sqrt(B * C) where
-// A = sum((I - mean(I)) * (J - mean(J)))
-// B = sum((I - mean(I))^2)
-// C = sum((J - mean(J))^2)
+// A = sum(I' * J')
+// B = sum(I' * I')
+// C = sum(J' * J')
 // The sum is over all voxels in the images.
 // dNCC/dp_k = 1/[sqrt(B) * C^3/2] * [dA/dp_k * C - 0.5 A * C * dC/dp_k] where
 // p_k is the k-th transformation parameter
-// where dA/dp_k = sum[I * (gradJ) dotted dT/dp_k - d/dp_k(mean(J))]
-// where dC/dp_k = 2 * sum[J' * (gradJ /dotted dT/dp_k - d/dp_k(mean(J))]
+// where dA/dp_k = sum[I' * (gradJ) dotted dT/dp_k - d/dp_k(mean(J))]
+// where dC/dp_k = 2 * sum[J' * (gradJ dotted dT/dp_k - d/dp_k(mean(J))]
 // For simplicity, we will assume that d/dp_k(mean(J)) = 0 even though this is not strictly true
 
 // 60 bytes
 struct NCCPartialSums {
-    sumA: f32,      // sum((I - mean(I)) * (J - mean(J)))
-    sumB: f32,      // sum((I - mean(I))^2), technically this could be precomputed in a separate shader
-    sumC: f32,      // sum((J - mean(J))^2)
+    sumA: f32,
+    sumB: f32,
+    sumC: f32,
 
-    dA_dalpha: f32, // sum[I * (gradJ) dotted dT/dalpha]
-    dA_dbeta: f32,  // sum[I * (gradJ) dotted dT/dbeta]
-    dA_dgamma: f32, // sum[I * (gradJ) dotted dT/dgamma]
-    dA_dtx: f32,    // sum[I * (gradJ) dotted dT/dtx]
-    dA_dty: f32,    // sum[I * (gradJ) dotted dT/dty]
-    dA_dtz: f32,    // sum[I * (gradJ) dotted dT/dtz]
+    dA_dalpha: f32,
+    dA_dbeta: f32,
+    dA_dgamma: f32,
+    dA_dtx: f32,
+    dA_dty: f32,
+    dA_dtz: f32,
 
-    dC_dalpha: f32, // sum[J' * (gradJ dotted dT/dalpha)]
-    dC_dbeta: f32,  // sum[J' * (gradJ dotted dT/dbeta)]
-    dC_dgamma: f32, // sum[J' * (gradJ dotted dT/dgamma)]
-    dC_dtx: f32,    // sum[J' * (gradJ dotted dT/dtx)]
-    dC_dty: f32,    // sum[J' * (gradJ dotted dT/dty)]
-    dC_dtz: f32     // sum[J' * (gradJ dotted dT/dtz)]
+    dC_dalpha: f32,
+    dC_dbeta: f32,
+    dC_dgamma: f32,
+    dC_dtx: f32,
+    dC_dty: f32,
+    dC_dtz: f32
 };
 
 @group(0) @binding(0) var<storage, read> params: TransformationParameters;
@@ -71,8 +72,8 @@ fn main(
     let dim = textureDimensions(targetImage, 0);
 
     var partialSums = NCCPartialSums(
-        0.0, 0.0, 0.0
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     );
 
@@ -116,20 +117,22 @@ fn main(
         let JPrime = movingIntensity - movingMean;
 
         let offset = vec3<f32>(1.0, 0.0, 0.0);
+        let voxelCentre = vec3<f32>(id.xyz) + vec3<f32>(0.5, 0.5, 0.5);
+        let transformed = mat * voxelCentre + vec3<f32>(params.tx, params.ty, params.tz);
         let gradMoving = vec3<f32>(
-            textureSampleLevel(movingImage, linearSampler, (mat * vec3<f32>(id.xyz + offset) + vec3<f32>(params.tx, params.ty, params.tz)) / vec3<f32>(dim), 0).r -
-            textureSampleLevel(movingImage, linearSampler, (mat * vec3<f32>(id.xyz - offset) + vec3<f32>(params.tx, params.ty, params.tz)) / vec3<f32>(dim), 0).r,
-            textureSampleLevel(movingImage, linearSampler, (mat * vec3<f32>(id.xyz + offset.yxy) + vec3<f32>(params.tx, params.ty, params.tz)) / vec3<f32>(dim), 0).r -
-            textureSampleLevel(movingImage, linearSampler, (mat * vec3<f32>(id.xyz - offset.yxy) + vec3<f32>(params.tx, params.ty, params.tz)) / vec3<f32>(dim), 0).r,
-            textureSampleLevel(movingImage, linearSampler, (mat * vec3<f32>(id.xyz + offset.yyx) + vec3<f32>(params.tx, params.ty, params.tz)) / vec3<f32>(dim), 0).r -
-            textureSampleLevel(movingImage, linearSampler, (mat * vec3<f32>(id.xyz - offset.yyx) + vec3<f32>(params.tx, params.ty, params.tz)) / vec3<f32>(dim), 0).r
+            textureSampleLevel(movingImage, linearSampler, (transformed + offset.xyy) / vec3<f32>(dim), 0).r -
+            textureSampleLevel(movingImage, linearSampler, (transformed - offset.xyy) / vec3<f32>(dim), 0).r,
+            textureSampleLevel(movingImage, linearSampler, (transformed + offset.yxy) / vec3<f32>(dim), 0).r -
+            textureSampleLevel(movingImage, linearSampler, (transformed - offset.yxy) / vec3<f32>(dim), 0).r,
+            textureSampleLevel(movingImage, linearSampler, (transformed + offset.yyx) / vec3<f32>(dim), 0).r -
+            textureSampleLevel(movingImage, linearSampler, (transformed - offset.yyx) / vec3<f32>(dim), 0).r
         ) * 0.5;
 
         let dTDalpha = dmatDalpha * vec3<f32>(id.xyz);
         let dTDbeta = dmatDbeta * vec3<f32>(id.xyz);
         let dTDgamma = dmatDgamma * vec3<f32>(id.xyz);
 
-        // dJ/dp_k = sum[J' * (gradJ dotted dT/dp_k)]
+        // gradJ dotted with dT/dp_k
         let dJDalpha = dot(gradMoving, dTDalpha);
         let dJDbeta = dot(gradMoving, dTDbeta);
         let dJDgamma = dot(gradMoving, dTDgamma);
@@ -138,19 +141,76 @@ fn main(
         partialSums.sumB = IPrime * IPrime;
         partialSums.sumC = JPrime * JPrime;
 
-        // dA/dp_k = sum[I * (gradJ) dotted dT/dp_k]
+        // dA/dp_k = sum[I' * (gradJ) dotted dT/dp_k]
         partialSums.dA_dalpha = IPrime * dJDalpha;
         partialSums.dA_dbeta  = IPrime * dJDbeta;
         partialSums.dA_dgamma = IPrime * dJDgamma;
-        partialSums.dA_dtx    = IPrime;
-        partialSums.dA_dty    = IPrime;
-        partialSums.dA_dtz    = IPrime;
+        // For translations dT/dtx = (1, 0, 0), dT/dty = (0, 1, 0), dT/dtz = (0, 0, 1)
+        // so e.g. dA/dtx = I' * gradJ dotted (1, 0, 0)
+        partialSums.dA_dtx    = IPrime * gradMoving.x;
+        partialSums.dA_dty    = IPrime * gradMoving.y;
+        partialSums.dA_dtz    = IPrime * gradMoving.z;
 
-        partialSums.dC_dalpha = JPrime * dJDalpha;
-        partialSums.dC_dbeta  = JPrime * dJDbeta;
-        partialSums.dC_dgamma = JPrime * dJDgamma;
-        partialSums.dC_dtx    = JPrime;
-        partialSums.dC_dty    = JPrime;
-        partialSums.dC_dtz    = JPrime;
+        // dC/dp_k = sum[J' * (gradJ dotted dT/dp_k)]
+        partialSums.dC_dalpha = 2 * JPrime * dJDalpha;
+        partialSums.dC_dbeta  = 2 * JPrime * dJDbeta;
+        partialSums.dC_dgamma = 2 * JPrime * dJDgamma;
+        partialSums.dC_dtx    = 2 * JPrime * gradMoving.x;
+        partialSums.dC_dty    = 2 * JPrime * gradMoving.y;
+        partialSums.dC_dtz    = 2 * JPrime * gradMoving.z;
+
+        localPartialSums[index] = partialSums;
+    }
+
+    workgroupBarrier();
+
+    // Perform tree-based parallel reduction
+    var pairOffset = numThreadsPerWorkgroup / 2u;
+    while (pairOffset > 0u) {
+        if (index < pairOffset) {
+            let data1 = localPartialSums[index];
+            let data2 = localPartialSums[index + pairOffset];
+            localPartialSums[index] = NCCPartialSums(
+                data1.sumA + data2.sumA,
+                data1.sumB + data2.sumB,
+                data1.sumC + data2.sumC,
+                data1.dA_dalpha + data2.dA_dalpha,
+                data1.dA_dbeta + data2.dA_dbeta,
+                data1.dA_dgamma + data2.dA_dgamma,
+                data1.dA_dtx + data2.dA_dtx,
+                data1.dA_dty + data2.dA_dty,
+                data1.dA_dtz + data2.dA_dtz,
+                data1.dC_dalpha + data2.dC_dalpha,
+                data1.dC_dbeta + data2.dC_dbeta,
+                data1.dC_dgamma + data2.dC_dgamma,
+                data1.dC_dtx + data2.dC_dtx,
+                data1.dC_dty + data2.dC_dty,
+                data1.dC_dtz + data2.dC_dtz
+            );
+        }
+        workgroupBarrier();
+        pairOffset = pairOffset / 2u;
+    }
+
+    if (index == 0u) {
+        let data = localPartialSums[0];
+        let wgIndex = workgroupId.x + workgroupId.y * numWorkgroups.x + workgroupId.z * numWorkgroups.x * numWorkgroups.y;
+        nccPartialSums[wgIndex] = NCCPartialSums(
+            data.sumA,
+            data.sumB,
+            data.sumC,
+            data.dA_dalpha,
+            data.dA_dbeta,
+            data.dA_dgamma,
+            data.dA_dtx,
+            data.dA_dty,
+            data.dA_dtz,
+            data.dC_dalpha,
+            data.dC_dbeta,
+            data.dC_dgamma,
+            data.dC_dtx,
+            data.dC_dty,
+            data.dC_dtz
+        );
     }
 }
