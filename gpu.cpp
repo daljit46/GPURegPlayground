@@ -8,10 +8,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 #include <webgpu/webgpu.h>
 #include <webgpu/webgpu_cpp.h>
@@ -243,14 +241,14 @@ Context Context::newContext()
             .maxComputeInvocationsPerWorkgroup = 512,
         }
     };
-    wgpu::DeviceDescriptor deviceDescriptor {};
-    deviceDescriptor.nextInChain = &dawnToggles;
-    deviceDescriptor.requiredFeatures = requiredFeatures.data();
-    deviceDescriptor.requiredFeatureCount = requiredFeatures.size();
-    deviceDescriptor.requiredLimits = &requiredLimits;
 
-    context.device = context.adapter.CreateDevice(&deviceDescriptor);
-
+    auto onDeviceLost = [](const WGPUDevice * device, WGPUDeviceLostReason reason, char const * message, void * userdata) {
+        std::cout << "Device lost: " << reason << "\n";
+        if(message != nullptr) {
+            std::cout << "Message: " << message << "\n";
+        }
+        std::cout << "\n";
+    };
 
     auto onDeviceError = [](WGPUErrorType type, const char* message, void*) {
         std::cout << "Device error: " << type << "\n";
@@ -260,16 +258,27 @@ Context Context::newContext()
         std::cout << "\n";
     };
 
-    auto onDeviceLost = [](WGPUDeviceLostReason reason, const char* message, void*) {
-        std::cout << "Device lost: " << reason << "\n";
-        if(message != nullptr) {
-            std::cout << "Message: " << message << "\n";
-        }
-        std::cout << "\n";
+    wgpu::DeviceDescriptor deviceDescriptor {};
+    deviceDescriptor.nextInChain = &dawnToggles;
+    deviceDescriptor.requiredFeatures = requiredFeatures.data();
+    deviceDescriptor.requiredFeatureCount = requiredFeatures.size();
+    deviceDescriptor.requiredLimits = &requiredLimits;
+
+    const wgpu::DeviceLostCallbackInfo deviceLostCallbackInfo {
+        .nextInChain = nullptr,
+        .callback = onDeviceLost,
+        .userdata = nullptr
+    };
+    const wgpu::UncapturedErrorCallbackInfo uncapturedErrorCallbackInfo {
+        .nextInChain = nullptr,
+        .callback = onDeviceError,
+        .userdata = nullptr
     };
 
-    context.device.SetUncapturedErrorCallback(onDeviceError, nullptr);
-    context.device.SetDeviceLostCallback(onDeviceLost, nullptr);
+    deviceDescriptor.deviceLostCallbackInfo = deviceLostCallbackInfo;
+    deviceDescriptor.uncapturedErrorCallbackInfo = uncapturedErrorCallbackInfo;
+
+    context.device = context.adapter.CreateDevice(&deviceDescriptor);
 
     getAdapterInfo(context);
 
