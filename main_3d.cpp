@@ -669,7 +669,7 @@ int main(int argc, char **argv)
     // Target transform
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> angleDist(-0.2, 0.2);
+    std::uniform_real_distribution<float> angleDist(-0.5, 0.5);
     std::uniform_real_distribution<float> translationDist(-30.0, 30.0);
 
     const float targetAlpha = randomInitialisation ? angleDist(gen) : 0.1F;
