@@ -675,9 +675,9 @@ int main(int argc, char **argv)
     const float targetAlpha = randomInitialisation ? angleDist(gen) : 0.1F;
     const float targetBeta  = randomInitialisation ? angleDist(gen) : 0.4F;
     const float targetGamma = randomInitialisation ? angleDist(gen) : -0.3F;
-    const float targetTx    = randomInitialisation ? angleDist(gen) : 10.0F;
-    const float targetTy    = randomInitialisation ? angleDist(gen) : 29.0F;
-    const float targetTz    = randomInitialisation ? angleDist(gen) : -23.0F;
+    const float targetTx    = randomInitialisation ? translationDist(gen) : 10.0F;
+    const float targetTy    = randomInitialisation ? translationDist(gen) : 29.0F;
+    const float targetTz    = randomInitialisation ? translationDist(gen) : -23.0F;
 
     spdlog::info("Target Alpha: {}", targetAlpha);
     spdlog::info("Target Beta: {}", targetBeta);
