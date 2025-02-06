@@ -5,11 +5,22 @@ enable chromium_internal_graphite;
 // To compute the final mean, another reduction step is required.
 // Workgroup size needs to be a power of 2.
 const workgroupSize = vec3<u32>({{workgroup_size}});
+// 0: sum, 1: min, 2: max
+const operation = {{operation}};
 
 @group(0) @binding(0) var inputTexture: texture_3d<f32>;
 @group(0) @binding(1) var<storage, read_write> outputArray: array<f32>;
 
 var<workgroup> localIntensities : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
+
+fn reductionOperation(a: f32, b: f32, operation: u32) -> f32 {
+    switch (operation) {
+        case 0: { return a + b; }
+        case 1: { return min(a, b); }
+        case 2: { return max(a, b); }
+        default: { return 0.0; }
+    }
+}
 
 @compute @workgroup_size(workgroupSize.x, workgroupSize.y, workgroupSize.z)
 fn main(@builtin(global_invocation_id) id: vec3<u32>,
@@ -34,7 +45,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>,
         if (index < offset) {
             let data1 = localIntensities[index];
             let data2 = localIntensities[index + offset];
-            localIntensities[index] = data1 + data2;
+            localIntensities[index] = reductionOperation(data1, data2, operation);
         }
         offset = offset / 2;
         workgroupBarrier();

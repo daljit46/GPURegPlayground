@@ -571,7 +571,10 @@ Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor) const
     const std::string workgroupSizeStr = std::to_string(kernelDescriptor.shader.workgroupSize.x) + ", " +
                                          std::to_string(kernelDescriptor.shader.workgroupSize.y) + ", " +
                                          std::to_string(kernelDescriptor.shader.workgroupSize.z);
-    const auto shaderCode = Utils::replacePlaceholder(kernelDescriptor.shader.code, "workgroup_size", workgroupSizeStr);
+    std::string shaderCode = Utils::replacePlaceholder(kernelDescriptor.shader.code, "workgroup_size", workgroupSizeStr);
+    for(const auto&[key, placeHolderValue] : kernelDescriptor.shader.placeHolders) {
+        shaderCode = Utils::replacePlaceholder(shaderCode, key, placeHolderValue);
+    }
     const auto computePipelineLabel = kernelDescriptor.shader.name + " compute pipeline";
     const wgpu::ComputePipelineDescriptor computePipelineDescriptor {
         .label = computePipelineLabel.c_str(),

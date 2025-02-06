@@ -25,7 +25,6 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
     const size_t numStages = static_cast<size_t>(std::ceil(std::log2(totalNumberOfUnits) / std::log2(wgSize.x)));
 
     auto shaderSource = Utils::readFile("shaders/reduction_f32_multi_stage.wgsl");
-    shaderSource = Utils::replacePlaceholder(shaderSource, "unit_size", std::to_string(dataDesc.unitSize));
 
     for(size_t i = 0; i < numStages; ++i) {
         const bool isLastStage = i == numStages - 1;
@@ -37,12 +36,25 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
             m_partialSums.emplace_back(dataDesc.result);
         }
 
+        const std::string operationString = [&]() {
+            switch (dataDesc.operation) {
+                case ReductionOperation::Sum: return "0u";
+                case ReductionOperation::Min: return "1u";
+                case ReductionOperation::Max: return "2u";
+            }
+        }();
+
+
         const gpu::KernelDescriptor reductionKernelDesc {
             .shader = {
                 .name = "reduction_float_multi_stage",
                 .entryPoint = "main",
                 .code = shaderSource,
-                .workgroupSize = wgSize
+                .workgroupSize = wgSize,
+                .placeHolders = {
+                    { "operation", operationString },
+                    { "unit_size", std::to_string(dataDesc.unitSize) }
+                }
             },
             .inputBuffers = { i == 0 ? inputBuffer : m_partialSums[i - 1] },
             .outputBuffers = { m_partialSums[i] }
@@ -56,7 +68,7 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
     assert(m_kernels.size() == numStages && "Number of kernels does not match number of stages");
 }
 
-void gpu::ReductionHelper::dispatch(const gpu::Context& gpuContext)
+void gpu::ReductionHelper::dispatch(const gpu::Context& gpuContext) const
 {
     int i = 0;
     for(const gpu::Kernel& reductionKernel : m_kernels) {

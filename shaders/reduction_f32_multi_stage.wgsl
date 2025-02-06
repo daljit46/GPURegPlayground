@@ -10,14 +10,22 @@
 
 const wgSize = vec3u({{workgroup_size}});
 const unitSize = {{unit_size}};
+const operation = {{operation}};
 
 @group(0) @binding(0) var<storage, read> inputArray: array<f32>;
 // Must have at least as many elements as the number of workgroups.
 @group(0) @binding(1) var<storage, read_write> partialSums: array<f32>;
-
 // Shared memory: one slice of size unitSize per thread.
 var<workgroup> localSums: array<f32, wgSize.x * unitSize>;
 
+fn reductionOperation(a: f32, b: f32, operation: u32) -> f32 {
+    switch (operation) {
+        case 0: { return a + b; }
+        case 1: { return min(a, b); }
+        case 2: { return max(a, b); }
+        default: { return 0.0; }
+    }
+}
 
 fn reduceLocalSums(index: u32, offset: u32) {
     // Each thread index in the local array is (localId.x * unitSize).
@@ -25,7 +33,7 @@ fn reduceLocalSums(index: u32, offset: u32) {
         let dstBase = index * unitSize;
         let srcBase = (index + offset) * unitSize;
         for (var i = 0u; i < unitSize; i += 1) {
-            localSums[dstBase + i] += localSums[srcBase + i];
+            localSums[dstBase + i] = reductionOperation(localSums[dstBase + i], localSums[srcBase + i], operation);
         }
     }
 }

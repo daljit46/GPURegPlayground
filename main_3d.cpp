@@ -501,8 +501,9 @@ SingleLevelResult registerAtSingleResolutionNCC(
     gpu::DataBuffer targetMeanIntermediateBuffer = context.makeEmptyBuffer(meanIntermediateBufferSize);
     const gpu::KernelDescriptor targetMeanKernelDesc {
         .shader = {
-            .code = Utils::readFile("shaders/3d/sum_intensities_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/reduction_image_3d.wgsl"),
             .workgroupSize = workgroupSize,
+            .placeHolders = { {"operation", "0u"} }
         },
         .inputTextures = { targetTexture    },
         .outputBuffers = { targetMeanIntermediateBuffer },

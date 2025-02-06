@@ -2,6 +2,7 @@
 
 #include "image.h"
 #include <cstddef>
+#include <map>
 #include <utility>
 #include <webgpu/webgpu_cpp.h>
 
@@ -78,6 +79,10 @@ struct ShaderEntry {
     std::string entryPoint = "main";
     std::string code;
     WorkgroupSize workgroupSize;
+    // When creating a kernel, placeholders in the shader code enclosed in {{}} will be
+    // replaced with the valuesv from this map. By default the placeholder {{workgroup_size}}
+    // will be replaced with the workgroup size in the shader code.
+    std::map<std::string, std::string> placeHolders;
 };
 
 struct Kernel {

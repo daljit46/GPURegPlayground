@@ -768,13 +768,14 @@ TEST_F(ShaderTest, ComputeMean3D) {
     );
     const uint32_t intermediateBufferSize = workgroupGrid.totalCount();
     const gpu::DataBuffer intermediateBuffer = wgpuContext.makeEmptyBuffer(intermediateBufferSize * sizeof(float));
-    const std::string shaderSource = Utils::readFile("shaders/3d/sum_intensities_3d.wgsl");
+    const std::string shaderSource = Utils::readFile("shaders/3d/reduction_image_3d.wgsl");
     const gpu::KernelDescriptor computeMeanDesc {
         .shader = {
-            .name = "sum_intensities_3d",
+            .name = "reduction_image_3d",
             .entryPoint = "main",
             .code = shaderSource,
-            .workgroupSize = workgroupSize
+            .workgroupSize = workgroupSize,
+            .placeHolders = { {"operation", "0u"} }
         },
         .inputTextures = { inputTexture },
         .outputBuffers = { intermediateBuffer }
@@ -819,7 +820,7 @@ TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
         );
     const uint32_t intermediateBufferSize = workgroupGrid.totalCount();
     const gpu::DataBuffer intermediateBuffer = wgpuContext.makeEmptyBuffer(intermediateBufferSize * sizeof(float));
-    const std::string shaderSource = Utils::readFile("shaders/3d/sum_intensities_transformed_3d_3d.wgsl");
+    const std::string shaderSource = Utils::readFile("shaders/3d/reduction_image_transformed_3d.wgsl");
 
     const gpu::DataBuffer transformationParametersBuffer =
         wgpuContext.makeEmptyBuffer(sizeof(NiftiTransformParams));
@@ -827,10 +828,11 @@ TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
 
     const gpu::KernelDescriptor computeMeanDesc {
         .shader = {
-            .name = "sum_intensities_3d",
+            .name = "reduction_image_transformed_3d",
             .entryPoint = "main",
             .code = shaderSource,
-            .workgroupSize = workgroupSize
+            .workgroupSize = workgroupSize,
+            .placeHolders = { {"operation", "0u"} }
         },
         .inputBuffers = { transformationParametersBuffer },
         .inputTextures = { inputTexture },

@@ -4,6 +4,13 @@
 
 namespace gpu {
 
+
+enum class ReductionOperation {
+    Sum,
+    Min,
+    Max
+};
+
 struct ReductionDescriptor {
     // Workgroup size must be a multiple of 2
     uint32_t workgroupSize = 256;
@@ -13,12 +20,13 @@ struct ReductionDescriptor {
     // Size of number of elements in the input buffer must be a multiple of workgroupSize
     gpu::DataBuffer data;
     gpu::DataBuffer result;
+    ReductionOperation operation = ReductionOperation::Sum;
 };
 
 struct ReductionHelper {
     explicit ReductionHelper(const gpu::ReductionDescriptor& dataDesc, const gpu::Context& gpuContext);
 
-    void dispatch(const gpu::Context& gpuContext);
+    void dispatch(const gpu::Context& gpuContext) const;
 private:
     std::vector<gpu::DataBuffer> m_partialSums;
     std::vector<gpu::Kernel> m_kernels;
