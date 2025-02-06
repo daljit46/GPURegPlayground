@@ -524,7 +524,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
 
     const gpu::KernelDescriptor movingMeanKernelDesc {
         .shader = {
-            .code = Utils::readFile("shaders/3d/sum_intensities_transformed_3d_3d.wgsl"),
+            .code = Utils::readFile("shaders/3d/reduction_image_transformed_3d.wgsl"),
             .workgroupSize = workgroupSize,
         },
         .inputBuffers  = { transformationParamsBuffer },
