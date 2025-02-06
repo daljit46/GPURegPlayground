@@ -2,16 +2,20 @@
 #include "adabeliefoptimiser.h"
 #include "image.h"
 #include "gpu.h"
-#include "utils.h"
+#include "reduce.h"
 #include "spdlog/spdlog.h"
 #include "scopedtimer.h"
 #include "transform.h"
+#include "utils.h"
 
-#include "reduce.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <matplot/matplot.h>
+#include <numeric>
 #include <random>
+#include <string>
 #include <vector>
 
 
