@@ -768,10 +768,10 @@ TEST_F(ShaderTest, ComputeMean3D) {
     );
     const uint32_t intermediateBufferSize = workgroupGrid.totalCount();
     const gpu::DataBuffer intermediateBuffer = wgpuContext.makeEmptyBuffer(intermediateBufferSize * sizeof(float));
-    const std::string shaderSource = Utils::readFile("shaders/3d/compute_mean_3d.wgsl");
+    const std::string shaderSource = Utils::readFile("shaders/3d/sum_intensities_3d.wgsl");
     const gpu::KernelDescriptor computeMeanDesc {
         .shader = {
-            .name = "compute_mean_3d",
+            .name = "sum_intensities_3d",
             .entryPoint = "main",
             .code = shaderSource,
             .workgroupSize = workgroupSize
@@ -819,7 +819,7 @@ TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
         );
     const uint32_t intermediateBufferSize = workgroupGrid.totalCount();
     const gpu::DataBuffer intermediateBuffer = wgpuContext.makeEmptyBuffer(intermediateBufferSize * sizeof(float));
-    const std::string shaderSource = Utils::readFile("shaders/3d/compute_mean_transformed_3d.wgsl");
+    const std::string shaderSource = Utils::readFile("shaders/3d/sum_intensities_transformed_3d_3d.wgsl");
 
     const gpu::DataBuffer transformationParametersBuffer =
         wgpuContext.makeEmptyBuffer(sizeof(NiftiTransformParams));
@@ -827,7 +827,7 @@ TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
 
     const gpu::KernelDescriptor computeMeanDesc {
         .shader = {
-            .name = "compute_mean_3d",
+            .name = "sum_intensities_3d",
             .entryPoint = "main",
             .code = shaderSource,
             .workgroupSize = workgroupSize
