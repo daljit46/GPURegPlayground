@@ -14,12 +14,13 @@ enum class ReductionOperation {
 struct ReductionDescriptor {
     // Workgroup size must be a multiple of 2
     uint32_t workgroupSize = 256;
-    // if unitSize > 1, the operation will be performed as if unitSize separate values
-    // e.g. {2, 2, 1, 1} with unitSize = 2 will be reduced to {4, 2}
-    uint32_t unitSize = 1;
+    // if groupSize > 1, the operation will be performed as if groupSize separate values
+    // e.g. {2, 2, 1, 1} with groupSize = 2 will be reduced to {4, 2}
+    uint32_t groupSize = 1;
     // Size of number of elements in the input buffer must be a multiple of workgroupSize
     gpu::DataBuffer data;
     gpu::DataBuffer result;
+    // List of operations for each item in the group
     std::vector<ReductionOperation> operations;
 };
 

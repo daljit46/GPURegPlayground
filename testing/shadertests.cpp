@@ -508,7 +508,7 @@ TEST_F(ShaderTest, MultiStageReductionFloatNoPadding)
 
         const gpu::ReductionDescriptor reductionDesc {
             .workgroupSize = 256,
-            .unitSize = 1,
+            .groupSize = 1,
             .data = inputBuffer,
             .result = wgpuContext.makeEmptyBuffer(sizeof(float))
         };
@@ -555,7 +555,7 @@ TEST_F(ShaderTest, MultiStageReductionFloatNoPaddingWithNonSingularUnitSizes)
 
         const gpu::ReductionDescriptor reductionDesc {
             .workgroupSize = 256,
-            .unitSize = unitSize,
+            .groupSize = unitSize,
             .data = inputBuffer,
             .result = wgpuContext.makeEmptyBuffer(sizeof(float) * unitSize)
         };
@@ -613,7 +613,7 @@ TEST_F(ShaderTest, MultiStageReductionFloatWithPadding)
 
         const gpu::ReductionDescriptor reductionDesc {
             .workgroupSize = 256,
-            .unitSize = 1,
+            .groupSize = 1,
             .data = inputBuffer,
             .result = wgpuContext.makeEmptyBuffer(sizeof(float))
         };

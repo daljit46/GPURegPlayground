@@ -196,7 +196,7 @@ SingleLevelResult registerAtSingleResolutionGPUOnly(
 
     const gpu::ReductionDescriptor reductionDesc{
         .workgroupSize = reductionWorkgroupSize,
-        .unitSize = sizeof(SSDGradients) / sizeof(float),
+        .groupSize = sizeof(SSDGradients) / sizeof(float),
         .data = ssdGradientsBuffer,
         .result = reductionResultBuffer
     };
@@ -513,7 +513,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
 
     const gpu::ReductionDescriptor targetMeanReductionDesc {
         .workgroupSize = reductionWorkgroupSize,
-        .unitSize = 1,
+        .groupSize = 1,
         .data = targetMeanIntermediateBuffer,
         .result = targetMeanBuffer
     };
@@ -537,7 +537,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
 
     const gpu::ReductionDescriptor movingMeanReductionDesc {
         .workgroupSize = 256,
-        .unitSize = 1,
+        .groupSize = 1,
         .data = sourceMeanIntermediateBuffer,
         .result = movingMeanBuffer
     };
