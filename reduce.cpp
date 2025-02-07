@@ -57,7 +57,7 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
                 .workgroupSize = wgSize,
                 .placeHolders = {
                     { "operations", operationString },
-                    { "unit_size", std::to_string(dataDesc.groupSize) }
+                    { "group_size", std::to_string(dataDesc.groupSize) }
                 }
             },
             .inputBuffers = { i == 0 ? inputBuffer : m_partialSums[i - 1] },
