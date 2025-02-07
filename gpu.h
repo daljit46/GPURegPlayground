@@ -2,6 +2,7 @@
 
 #include "image.h"
 #include <cstddef>
+#include <filesystem>
 #include <map>
 #include <utility>
 #include <webgpu/webgpu_cpp.h>
@@ -77,7 +78,7 @@ struct WorkgroupGrid {
 struct ShaderEntry {
     std::string name;
     std::string entryPoint = "main";
-    std::string code;
+    std::filesystem::path filePath;
     WorkgroupSize workgroupSize;
     // When creating a kernel, placeholders in the shader code enclosed in {{}} will be
     // replaced with the valuesv from this map. By default the placeholder {{workgroup_size}}

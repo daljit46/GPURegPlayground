@@ -143,9 +143,6 @@ float ssd(const std::vector<T>& a, const std::vector<T>& b) {
 
 TEST_F(ShaderTest, GradientX)
 {
-    constexpr auto shaderPath = "shaders/gradientx.wgsl";
-    const auto shaderSource = Utils::readFile(shaderPath);
-
     const auto cpuImage =  Utils::loadFromDisk("data/brain.pgm");
     const auto gpuImage = wgpuContext.makeTextureFromHostPgm(cpuImage);
     const auto outputBuffer = wgpuContext.makeEmptyBuffer(cpuImage.width * cpuImage.height * sizeof(float));
@@ -154,7 +151,7 @@ TEST_F(ShaderTest, GradientX)
         .shader = {
             .name = "gradientx",
             .entryPoint = "computeSobelX",
-            .code = shaderSource,
+            .filePath = "shaders/gradientx.wgsl",
             .workgroupSize = { 16, 16, 1 }
         },
         .inputTextures = { gpuImage },
@@ -217,7 +214,7 @@ TEST_F(ShaderTest, GradientY)
         .shader = {
             .name = "gradienty",
             .entryPoint = "computeSobelY",
-            .code = shaderSource,
+            .filePath = shaderPath,
             .workgroupSize = { 16, 16, 1 }
         },
         .inputTextures = { gpuImage },
@@ -289,7 +286,7 @@ TEST_F(ShaderTest, TransformImage)
         .shader = {
             .name = "transformimage",
             .entryPoint = "computeTransform",
-            .code = shaderSource,
+            .filePath = shaderPath,
             .workgroupSize = { 16, 16, 1 }
         },
         .uniformBuffers = { wgpuContext.makeUniformBuffer(&uniformParams, sizeof(TransformParams)) },
@@ -362,7 +359,7 @@ TEST_F(ShaderTest, TransformImage3D)
     const gpu::KernelDescriptor transformKernelDesc {
         .shader = {
             .name = "transformimage3d",
-            .code = shaderSource,
+            .filePath = shaderPath,
             .workgroupSize = { 4, 4, 4 }
         },
         .uniformBuffers = { wgpuContext.makeUniformBuffer(&uniformParams, sizeof(Uniforms)) },
@@ -438,7 +435,7 @@ TEST_F(ShaderTest, Reduction)
         .shader = {
             .name = "reduction",
             .entryPoint = "main",
-            .code = shaderSource,
+            .filePath = "shaders/reduction.wgsl",
             .workgroupSize = { 256, 1, 1 }
         },
         .inputBuffers = { inputBuffer },
@@ -472,13 +469,11 @@ TEST_F(ShaderTest, ReductionFloat)
 
     const auto outputBuffer = wgpuContext.makeEmptyBuffer(sizeof(uint32_t));
 
-    const auto shaderSource = Utils::readFile("shaders/reduction_f32.wgsl");
-
     const gpu::KernelDescriptor reductionKernelDesc {
         .shader = {
             .name = "reduction_float",
             .entryPoint = "main",
-            .code = shaderSource,
+            .filePath = "shaders/reduction_f32.wgsl",
             .workgroupSize = { 256, 1, 1 }
         },
         .inputBuffers = { inputBuffer },
@@ -657,12 +652,11 @@ TEST_F(ShaderTest, Downsample)
         .usage = gpu::ResourceUsage::ReadWrite
     });
 
-    const auto shaderSource = Utils::readFile("shaders/downsample.wgsl");
     const gpu::KernelDescriptor downsampleOpDesc {
         .shader = {
             .name = "downsampling",
             .entryPoint = "main",
-            .code = shaderSource,
+            .filePath = "shaders/downsample.wgsl",
             .workgroupSize = { 16, 16, 1 }
         },
         .inputTextures = { inputTexture },
@@ -719,7 +713,7 @@ TEST_F(ShaderTest, Downsample3D) {
         .shader = {
             .name = "downsampling3d",
             .entryPoint = "main",
-            .code = shaderSource,
+            .filePath = "shaders/3d/downsample_3d.wgsl",
             .workgroupSize = { 4, 4, 4 }
         },
         .inputTextures = { inputTexture },
@@ -773,7 +767,7 @@ TEST_F(ShaderTest, ComputeMean3D) {
         .shader = {
             .name = "reduction_image_3d",
             .entryPoint = "main",
-            .code = shaderSource,
+            .filePath = "shaders/3d/reduction_image_3d.wgsl",
             .workgroupSize = workgroupSize,
             .placeHolders = { {"operation", "0u"} }
         },
@@ -830,7 +824,7 @@ TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
         .shader = {
             .name = "reduction_image_transformed_3d",
             .entryPoint = "main",
-            .code = shaderSource,
+            .filePath = "shaders/3d/reduction_image_transformed_3d.wgsl",
             .workgroupSize = workgroupSize,
             .placeHolders = { {"operation", "0u"} }
         },

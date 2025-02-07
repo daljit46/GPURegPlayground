@@ -1,7 +1,10 @@
 #pragma once
 
 #include "image.h"
+#include <cstdint>
 #include <filesystem>
+#include <map>
+#include <string>
 
 class PgmImage;
 class NiftiImage;
@@ -19,8 +22,7 @@ enum ReadFileMode {
 };
 std::string readFile(const std::filesystem::path &filePath, ReadFileMode mode = ReadFileMode::Text);
 
-// Replaces all placeholders of the form {{value}} with the given value
-std::string replacePlaceholder(std::string_view str, std::string_view placeholder, std::string_view value);
+std::string preprocessWGSL(const std::filesystem::path &shaderPath, const std::map<std::string, std::string> &replacements);
 
 template<typename T>
 T degreesToRadians(T degrees) {

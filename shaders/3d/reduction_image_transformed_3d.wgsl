@@ -1,13 +1,5 @@
 enable chromium_internal_graphite;
-
-struct TransformationParameters {
-    alpha: f32, // rotation around z-axis
-    beta: f32,  // rotation around y-axis
-    gamma: f32, // rotation around x-axis
-    tx: f32,
-    ty: f32,
-    tz: f32
-};
+#include "rigidtransformation.wgsl"
 
 // Computes the mean of a 3D texture transformed by the given parameters.
 // The output needs to be an intermediate array of size >= number of dispatched workgroups.
@@ -47,18 +39,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>,
 
     var intensity : f32 = 0.0;
 
-    let cosAlpha = cos(params.alpha);
-    let sinAlpha = sin(params.alpha);
-    let cosBeta = cos(params.beta);
-    let sinBeta = sin(params.beta);
-    let cosGamma = cos(params.gamma);
-    let sinGamma = sin(params.gamma);
-    // WebGPU uses column-major matrices
-    let mat = mat3x3<f32>(
-        cosAlpha * cosBeta, sinAlpha * cosBeta, -sinBeta,
-        cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma, sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma, cosBeta * sinGamma,
-        cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma, sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma, cosBeta * cosGamma
-    );
+    let mat = rotationMatrix(params);
     let voxelCenter = coords + vec3<f32>(0.5, 0.5, 0.5);
     let transformed = mat * voxelCenter + vec3<f32>(params.tx, params.ty, params.tz);
 

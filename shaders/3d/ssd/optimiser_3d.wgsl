@@ -1,5 +1,6 @@
 // This shader updates the transform of the input 3D texture using the SSD and gradients from previous shader.
 // To do this we will employ an AdaBelief optimizer to update the parameters of the transform.
+#include "../rigidtransformation.wgsl"
 
 const MAX_ITERATIONS: u32 = 500;
 const NUM_PARAMETERS: u32 = 6;
@@ -7,14 +8,6 @@ const BETA1: f32 = 0.7;
 const BETA2: f32 = 0.9999;
 const EPSILON: f32 = 1e-8;
 
-struct TransformationParameters {
-    alpha: f32, // rotation around z-axis
-    beta: f32,  // rotation around y-axis
-    gamma: f32, // rotation around x-axis
-    tx: f32,
-    ty: f32,
-    tz: f32
-};
 
 struct SSDGradients {
     ssd: f32,

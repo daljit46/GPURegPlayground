@@ -3,14 +3,8 @@
 // as a storage format for the output texture
 enable chromium_internal_graphite;
 
-struct TransformationParameters {
-    alpha: f32, // rotation around z-axis
-    beta: f32,  // rotation around y-axis
-    gamma: f32, // rotation around x-axis
-    tx: f32,
-    ty: f32,
-    tz: f32
-};
+#include "../rigidtransformation.wgsl"
+
 
 struct SSDGradients {
     ssd: f32,
@@ -74,19 +68,10 @@ fn main(
         local_gradients[index] = SSDGradients(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     }
     else {
-        let sinAlpha = sin(params.alpha);
-        let cosAlpha = cos(params.alpha);
-        let sinBeta = sin(params.beta);
-        let cosBeta = cos(params.beta);
-        let sinGamma = sin(params.gamma);
-        let cosGamma = cos(params.gamma);
-
-        // WebGPU uses column-major matrices
-        let mat = mat3x3<f32>(
-            cosAlpha * cosBeta, sinAlpha * cosBeta, -sinBeta,
-            cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma, sinAlpha * sinBeta * sinGamma + cosAlpha * cosGamma, cosBeta * sinGamma,
-            cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma, sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma, cosBeta * cosGamma
-        );
+        let mat = rotationMatrix(params);
+        let dmatDalpha = dmatDalpha(params);
+        let dmatDbeta = dmatDbeta(params);
+        let dmatDgamma = dmatDgamma(params);
 
         let voxelCenter = vec3<f32>(id.xyz) + vec3<f32>(0.5, 0.5, 0.5);
         let transformed = mat * voxelCenter + vec3<f32>(params.tx, params.ty, params.tz);
@@ -102,25 +87,6 @@ fn main(
         )/2.0;
 
         let error = movingValue - textureLoad(targetImage, id, 0).r;
-
-        // x' = column 1 dotted with (x, y, z)
-        // we need dx'/dalpha, dx'/dbeta, dx'/dgamma, dy'/dalpha, dy'/dbeta, dy'/dgamma, dz'/dalpha, dz'/dbeta, dz'/dgamma
-        let dmatDalpha = mat3x3<f32>(
-            -sinAlpha * cosBeta, cosAlpha * cosBeta, 0.0,
-            -sinAlpha * sinBeta * sinGamma - cosAlpha * cosGamma, cosAlpha * sinBeta * sinGamma - sinAlpha * cosGamma, 0.0,
-            -sinAlpha * sinBeta * cosGamma + cosAlpha * sinGamma, cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma, 0.0
-        );
-        let dmatDbeta = mat3x3<f32>(
-            -cosAlpha * sinBeta, -sinAlpha * sinBeta, -cosBeta,
-            cosAlpha * cosBeta * sinGamma, sinAlpha * cosBeta * sinGamma, -sinBeta * sinGamma,
-            cosAlpha * cosBeta * cosGamma, sinAlpha * cosBeta * cosGamma, -sinBeta * cosGamma
-        );
-        let dmatDgamma = mat3x3<f32>(
-            0.0, 0.0, 0.0,
-            cosAlpha * sinBeta * cosGamma + sinAlpha * sinGamma, sinAlpha * sinBeta * cosGamma - cosAlpha * sinGamma, cosBeta * cosGamma,
-            -cosAlpha * sinBeta * sinGamma + sinAlpha * cosGamma, -sinAlpha * sinBeta * sinGamma - cosAlpha * cosGamma, -cosBeta * sinGamma
-        );
-
         let gradXYZalpha = dmatDalpha * voxelCenter;
         let gradXYZbeta = dmatDbeta * voxelCenter;
         let gradXYZgamma = dmatDgamma * voxelCenter;

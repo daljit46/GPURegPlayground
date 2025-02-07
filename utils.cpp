@@ -2,6 +2,11 @@
 #include "nifti1_io.h"
 #include "spdlog/spdlog.h"
 #include <cstddef>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <string_view>
+#include <unordered_set>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -11,10 +16,94 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <regex>
 #include <string>
 #include <vector>
 
+
 using namespace std::string_literals;
+
+
+namespace {
+
+std::string replacePlaceholders(const std::string& line,
+                                const std::map<std::string, std::string>& substitutions) {
+    const std::regex placeholder_regex(R"(\{\{([^{}]+)\}\})");
+    std::string result;
+    size_t last_pos = 0;
+
+    std::sregex_iterator it(line.begin(), line.end(), placeholder_regex);
+    std::sregex_iterator end;
+
+    for (; it != end; ++it) {
+        const std::smatch match = *it;
+        const size_t start = match.position();
+        const size_t length = match.length();
+        const std::string key = match[1].str();
+
+        result += line.substr(last_pos, start - last_pos);
+
+        auto sub_it = substitutions.find(key);
+        if (sub_it != substitutions.end()) {
+            result += sub_it->second;
+        } else {
+            result += match.str(); // Leave unknown placeholders intact
+        }
+
+        last_pos = start + length;
+    }
+
+    result += line.substr(last_pos);
+
+    return result;
+}
+
+std::string_view trim_leading_whitespace(std::string_view s) {
+    size_t start = s.find_first_not_of(" \t");
+    return (start == std::string::npos) ? "" : s.substr(start);
+}
+
+bool starts_with(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() && s.substr(0, prefix.size()) == prefix;
+}
+
+std::string preprocessWGSLImpl(const std::filesystem::path &filePath,
+                                      std::unordered_set<std::string>& visitedFiles)
+{
+    // Detect cycles (if the file was already visited, skip/throw).
+    if (visitedFiles.find(filePath) != visitedFiles.end()) {
+        throw std::runtime_error("Detected recursive include of " + filePath.string());
+    }
+    visitedFiles.insert(filePath);
+    const std::string code = Utils::readFile(filePath);
+
+    std::stringstream inputStream(code);
+    std::stringstream outputStream;
+
+    std::string line;
+    while (std::getline(inputStream, line)) {
+        const std::string_view trimmedLine = trim_leading_whitespace(line);
+        if (trimmedLine.rfind("#include", 0) == 0) {
+            // Attempt to parse out the quoted file name
+            const auto startQuote = trimmedLine.find_first_of("\"<");
+            const auto endQuote   = trimmedLine.find_last_of("\">");
+
+            if (startQuote != std::string::npos && endQuote != std::string::npos && endQuote > startQuote) {
+                const std::string_view includePath = trimmedLine.substr(startQuote + 1, endQuote - (startQuote + 1));
+
+                const std::filesystem::path baseDir  = std::filesystem::path(filePath).parent_path();
+                const std::filesystem::path fullPath = baseDir / includePath;
+                const std::string includedCode = preprocessWGSLImpl(fullPath, visitedFiles);
+                outputStream << includedCode << "\n";
+                continue;
+            }
+        }
+        outputStream << line << "\n";
+    }
+    return outputStream.str();
+}
+}
 
 PgmImage Utils::loadFromDisk(const std::filesystem::path &imagePath)
 {
@@ -92,31 +181,6 @@ std::string Utils::readFile(const std::filesystem::path &filePath, ReadFileMode 
 
 }
 
-std::string Utils::replacePlaceholder(std::string_view str, std::string_view placeholder, std::string_view value)
-{
-    std::string result;
-    result.reserve(str.size());
-
-    // Placeholders are of the form {{value}} (spaces inside the braces are ignored)
-    const auto placeholderSize = placeholder.size();
-    const auto valueSize = value.size();
-
-    for(size_t i = 0; i < str.size(); ++i) {
-        if(str[i] == '{' && i + placeholderSize + 2 < str.size() && str[i + 1] == '{') {
-            if(str.substr(i + 2, placeholderSize) == placeholder) {
-                result += value;
-                i += placeholderSize + 3;
-                continue;
-            }
-        }
-        result += str[i];
-    }
-
-    return result;
-}
-
-
-
 void Utils::saveToDisk(const NiftiImage &image, const std::filesystem::path &imagePath)
 {
     if(imagePath.empty()) {
@@ -135,4 +199,16 @@ void Utils::saveToDisk(const NiftiImage &image, const std::filesystem::path &ima
 uint32_t Utils::nextMultipleOf(uint32_t value, uint32_t multiple)
 {
     return ((value + multiple - 1) / multiple) * multiple;
+}
+
+
+
+
+std::string Utils::preprocessWGSL(const std::filesystem::path &filePath, const std::map<std::string, std::string> &replacements)
+{
+    // Track which files have been visited to avoid recursion loops.
+    std::unordered_set<std::string> visitedFiles;
+    const std::string combinedCode = preprocessWGSLImpl(filePath, visitedFiles);
+    const std::string finalCode = replacePlaceholders(combinedCode, replacements);
+    return finalCode;
 }

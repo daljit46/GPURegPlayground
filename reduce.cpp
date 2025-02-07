@@ -24,8 +24,6 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
     const gpu::DataBuffer &inputBuffer = dataDesc.data;
     const size_t numStages = static_cast<size_t>(std::ceil(std::log2(totalNumberOfUnits) / std::log2(wgSize.x)));
 
-    auto shaderSource = Utils::readFile("shaders/reduction_f32_multi_stage.wgsl");
-
     for(size_t i = 0; i < numStages; ++i) {
         const bool isLastStage = i == numStages - 1;
         const size_t partialSumUnits = std::ceil(1.0 * totalNumberOfUnits / std::pow(wgSize.x, i + 1));
@@ -49,7 +47,7 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
             .shader = {
                 .name = "reduction_float_multi_stage",
                 .entryPoint = "main",
-                .code = shaderSource,
+                .filePath = "shaders/reduction_f32_multi_stage.wgsl",
                 .workgroupSize = wgSize,
                 .placeHolders = {
                     { "operation", operationString },
