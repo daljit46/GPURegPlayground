@@ -20,7 +20,7 @@ struct ReductionDescriptor {
     // Size of number of elements in the input buffer must be a multiple of workgroupSize
     gpu::DataBuffer data;
     gpu::DataBuffer result;
-    ReductionOperation operation = ReductionOperation::Sum;
+    std::vector<ReductionOperation> operations;
 };
 
 struct ReductionHelper {

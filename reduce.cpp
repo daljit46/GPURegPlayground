@@ -18,6 +18,7 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
            "Number of units in the input buffer must be a multiple of workgroup size");
     assert(dataDesc.workgroupSize % 2 == 0 && "Workgroup size must be a multiple of 2");
     assert(dataDesc.data.size >= dataDesc.unitSize * sizeof(float) && "Input buffer size must be greater than or equal to unitSize * 4 bytes");
+    assert(dataDesc.operations.size() == dataDesc.unitSize && "Number of operations must match unit size");
 
     const gpu::WorkgroupSize wgSize = { dataDesc.workgroupSize, 1, 1 };
     const size_t totalNumberOfUnits = dataDesc.data.size / sizeof(float) / dataDesc.unitSize;
@@ -35,11 +36,16 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
         }
 
         const std::string operationString = [&]() {
-            switch (dataDesc.operation) {
-                case ReductionOperation::Sum: return "0u";
-                case ReductionOperation::Min: return "1u";
-                case ReductionOperation::Max: return "2u";
+            std::string s;
+            for(const ReductionOperation operation : dataDesc.operations) {
+                s += s.empty() ? "" : ",";
+                switch (operation) {
+                    case ReductionOperation::Sum: s += "0u"; break;
+                    case ReductionOperation::Min: s += "1u"; break;
+                    case ReductionOperation::Max: s += "2u"; break;
+                }
             }
+            return s;
         }();
 
 
@@ -50,7 +56,7 @@ gpu::ReductionHelper::ReductionHelper(const ReductionDescriptor &dataDesc, const
                 .filePath = "shaders/reduction_f32_multi_stage.wgsl",
                 .workgroupSize = wgSize,
                 .placeHolders = {
-                    { "operation", operationString },
+                    { "operations", operationString },
                     { "unit_size", std::to_string(dataDesc.unitSize) }
                 }
             },

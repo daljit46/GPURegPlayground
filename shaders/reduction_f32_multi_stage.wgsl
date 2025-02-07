@@ -10,7 +10,13 @@
 
 const wgSize = vec3u({{workgroup_size}});
 const unitSize = {{unit_size}};
-const operation = {{operation}};
+// Each item in a single unit will be subject to a given operation.
+// e.g. for unitSize = 4, operations = [0, 1, 2, 0] would mean that the
+// first item is summed, the second is min'd, the third is max'd, and the
+// fourth is summed.
+const operations = array<u32, {{unit_size}}>(
+    {{operations}}
+);
 
 @group(0) @binding(0) var<storage, read> inputArray: array<f32>;
 // Must have at least as many elements as the number of workgroups.
@@ -33,6 +39,7 @@ fn reduceLocalSums(index: u32, offset: u32) {
         let dstBase = index * unitSize;
         let srcBase = (index + offset) * unitSize;
         for (var i = 0u; i < unitSize; i += 1) {
+            let operation = operations[i];
             localSums[dstBase + i] = reductionOperation(localSums[dstBase + i], localSums[srcBase + i], operation);
         }
     }
