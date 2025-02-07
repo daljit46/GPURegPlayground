@@ -25,7 +25,7 @@ struct ReductionDescriptor {
     gpu::DataBuffer data;
     gpu::DataBuffer result;
     // List of operations for each item in the group
-    std::vector<ReductionOperation> operations;
+    std::vector<ReductionOperation> operations = {ReductionOperation::Sum};
 };
 
 struct ReductionHelper {
