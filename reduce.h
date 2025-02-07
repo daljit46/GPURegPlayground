@@ -11,6 +11,7 @@ enum class ReductionOperation {
     Max
 };
 
+
 struct ReductionDescriptor {
     // Workgroup size must be a multiple of 2
     uint32_t workgroupSize = 256;
@@ -18,8 +19,7 @@ struct ReductionDescriptor {
     // into groups of groupSize elements. For each element in the group, the corresponding
     // operation in the operations list will be performed.
     // Example: groupSize = 4, operations = [Sum, Min, Max, Sum]
-    // The first element of the group will be the sum of every 4 elements in the input buffer,
-    // the second element will be the minimum of every 4 elements in the input buffer, etc.
+    // [[1, 2, 3, 4], [5, 6, 7, 8]] -> [1 + 5, min(2, 6), max(3, 7), 4 + 8] = [6, 2, 7, 12]
     uint32_t groupSize = 1;
     // Size of number of elements in the input buffer must be a multiple of workgroupSize
     gpu::DataBuffer data;
