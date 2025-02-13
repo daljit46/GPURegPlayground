@@ -2,22 +2,29 @@
 // as a storage format for the output texture
 enable chromium_internal_graphite;
 
-@group(0) @binding(0) var inputTexture: texture_3d<f32>;
-@group(0) @binding(1) var<storage, read_write> histogramBuffer: array<atomic<u32>>;
+const numBins = {{numBins}};
 
-const numBins = 256u;
+// Compute the histogram for an image
+@group(0) @binding(0) var<storage, read> minMax: vec2<f32>;
+@group(0) @binding(1) var inputTexture: texture_3d<f32>;
+@group(0) @binding(2) var<storage, read_write> histogram: array<atomic<u32>>;
 
 @compute @workgroup_size({{workgroup_size}})
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dim = vec3<f32>(textureDimensions(inputTexture, 0));
-    let coords = vec3<f32>(id.xyz);
+    let coords : vec3<f32> = vec3<f32>(id.xyz);
+    let range = minMax.y - minMax.x;
+
+    if (range == 0.0) {
+        return;
+    }
 
     if (coords.x >= dim.x || coords.y >= dim.y || coords.z >= dim.z) {
         return;
     }
 
-    let color = textureLoad(inputTexture, id.xyz, 0).r;
-
-    let bin = u32(color * f32(numBins - 1u));
-    atomicAdd(&histogramBuffer[bin], 1u);
+    let intensity = textureLoad(inputTexture, id.xyz, 0).r;
+    // bin = (intensity - min) / range * numBins
+    let bin = u32(round((intensity - minMax.x) / range * f32(numBins - 1)));
+    atomicAdd(&histogram[bin], 1u);
 }

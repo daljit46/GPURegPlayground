@@ -938,10 +938,56 @@ TEST_F(ShaderTest, Histogram3D)
     const gpu::Texture inputTexture = wgpuContext.makeTextureFromHostNifti(brainImage);
     const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
 
-    const gpu::WorkgroupSize workgroupSize { 8, 8, 4 };
+    constexpr uint32_t numBins = 64u;
+    const gpu::WorkgroupSize workgroupSize { 4, 4, 4 };
     const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
         brainImage.width, brainImage.height, brainImage.depth, workgroupSize
     );
+
+    const size_t minMaxIntermediateBufferSize = Utils::nextMultipleOf(2 * workgroupGrid.totalCount(), 256);
+    const gpu::DataBuffer minMaxIntermediateBuffer = wgpuContext.makeEmptyBuffer(minMaxIntermediateBufferSize * sizeof(float));
+    const gpu::KernelDescriptor minMaxDesc {
+        .shader = {
+            .name = "minMaxReduction",
+            .entryPoint = "main",
+            .filePath = "shaders/3d/reduction_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                {"operations_size", "2u"},
+                {"operations", "1u, 2u"}
+            }
+        },
+        .inputTextures = { inputTexture },
+        .outputBuffers = { minMaxIntermediateBuffer }
+    };
+    const gpu::Kernel minMaxKernel = wgpuContext.makeKernel(minMaxDesc);
+    wgpuContext.dispatchKernel(minMaxKernel, workgroupGrid);
+
+    // Reduce minMaxIntermediateBuffer to a single value
+    const gpu::DataBuffer minMaxBuffer = wgpuContext.makeEmptyBuffer(2 * sizeof(float));
+    gpu::ReductionHelper minMaxReductionHelper({
+        .workgroupSize = 256,
+        .groupSize = 2,
+        .data = minMaxIntermediateBuffer,
+        .result = minMaxBuffer,
+        .operations = { gpu::ReductionOperation::Min, gpu::ReductionOperation::Max }
+    }, wgpuContext);
+    minMaxReductionHelper.dispatch(wgpuContext);
+
+    // Compute min max on the CPU for comparison
+    float minPixel = std::numeric_limits<float>::max();
+    float maxPixel = std::numeric_limits<float>::min();
+
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const uint8_t pixel = getPixel3D(x, y, z, brainImage);
+                const float normalizedPixel = static_cast<float>(pixel) / 255.0F;
+                minPixel = std::min(minPixel, normalizedPixel);
+                maxPixel = std::max(maxPixel, normalizedPixel);
+            }
+        }
+    }
 
     const gpu::KernelDescriptor computeHistogramDesc {
         .shader = {
@@ -949,28 +995,34 @@ TEST_F(ShaderTest, Histogram3D)
             .entryPoint = "main",
             .filePath = "shaders/3d/histogram_image_3d.wgsl",
             .workgroupSize = workgroupSize,
+            .placeHolders = { {"numBins", std::to_string(numBins)} }
         },
+        .inputBuffers = { minMaxBuffer },
         .inputTextures = { inputTexture },
-        .outputBuffers = { wgpuContext.makeEmptyBuffer(256 * sizeof(uint32_t)) },
+        .outputBuffers = { wgpuContext.makeEmptyBuffer(numBins * sizeof(uint32_t)) },
     };
 
     const gpu::Kernel computeHistogramKernel = wgpuContext.makeKernel(computeHistogramDesc);
     wgpuContext.dispatchKernel(computeHistogramKernel, workgroupGrid);
 
-    std::vector<uint32_t> gpuHistogram(256);
+    std::vector<uint32_t> gpuHistogram(numBins);
     wgpuContext.downloadBuffer(computeHistogramDesc.outputBuffers[0], gpuHistogram.data());
 
-    std::vector<uint32_t> cpuHistogram(256, 0);
+    std::vector<uint32_t> cpuHistogram(numBins, 0);
     for(size_t z = 0; z < brainImage.depth; z++) {
         for(size_t y = 0; y < brainImage.height; y++) {
             for(size_t x = 0; x < brainImage.width; x++) {
                 const uint8_t pixel = getPixel3D(x, y, z, brainImage);
-                cpuHistogram[pixel]++;
+                const float normalizedPixel = static_cast<float>(pixel) / 255.0F;
+                const size_t bin = std::round((normalizedPixel - minPixel) / (maxPixel - minPixel) * (numBins - 1));
+                cpuHistogram[bin]++;
             }
         }
     }
 
-    for(size_t i = 0; i < 256; i++) {
+    for(size_t i = 0; i < numBins; i++) {
+        const auto cpuValue = cpuHistogram[i];
+        const auto gpuValue = gpuHistogram[i];
         EXPECT_EQ(cpuHistogram[i], gpuHistogram[i]);
     }
 }
