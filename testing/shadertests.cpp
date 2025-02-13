@@ -931,3 +931,46 @@ TEST_F(ShaderTest, ComputeTransformedSingleImageOperation3D)
 
     EXPECT_NEAR(cpuMean, gpuMean, 1e-2);
 }
+
+TEST_F(ShaderTest, Histogram3D)
+{
+    auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
+    const gpu::Texture inputTexture = wgpuContext.makeTextureFromHostNifti(brainImage);
+    const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
+
+    const gpu::WorkgroupSize workgroupSize { 8, 8, 4 };
+    const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
+        brainImage.width, brainImage.height, brainImage.depth, workgroupSize
+    );
+
+    const gpu::KernelDescriptor computeHistogramDesc {
+        .shader = {
+            .name = "histogram_3d",
+            .entryPoint = "main",
+            .filePath = "shaders/3d/histogram_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+        },
+        .inputTextures = { inputTexture },
+        .outputBuffers = { wgpuContext.makeEmptyBuffer(256 * sizeof(uint32_t)) },
+    };
+
+    const gpu::Kernel computeHistogramKernel = wgpuContext.makeKernel(computeHistogramDesc);
+    wgpuContext.dispatchKernel(computeHistogramKernel, workgroupGrid);
+
+    std::vector<uint32_t> gpuHistogram(256);
+    wgpuContext.downloadBuffer(computeHistogramDesc.outputBuffers[0], gpuHistogram.data());
+
+    std::vector<uint32_t> cpuHistogram(256, 0);
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const uint8_t pixel = getPixel3D(x, y, z, brainImage);
+                cpuHistogram[pixel]++;
+            }
+        }
+    }
+
+    for(size_t i = 0; i < 256; i++) {
+        EXPECT_EQ(cpuHistogram[i], gpuHistogram[i]);
+    }
+}
