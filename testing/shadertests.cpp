@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <iterator>
+#include <limits>
 #include <nifti1.h>
 #include <nifti1_io.h>
 #include <cstddef>
@@ -749,7 +750,7 @@ TEST_F(ShaderTest, Downsample3D) {
     EXPECT_LT(meanDifference(cpuOutput, gpuOutputData) / 255.0, 5e-3F);
 }
 
-TEST_F(ShaderTest, ComputeMean3D) {
+TEST_F(ShaderTest, ComputeSingleImageOperation3D) {
     auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
     const gpu::Texture inputTexture = wgpuContext.makeTextureFromHostNifti(brainImage);
     const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
@@ -769,7 +770,10 @@ TEST_F(ShaderTest, ComputeMean3D) {
             .entryPoint = "main",
             .filePath = "shaders/3d/reduction_image_3d.wgsl",
             .workgroupSize = workgroupSize,
-            .placeHolders = { {"operation", "0u"} }
+            .placeHolders = {
+                {"operations_size", "1u"},
+                {"operations", "0u"}
+            }
         },
         .inputTextures = { inputTexture },
         .outputBuffers = { intermediateBuffer }
@@ -796,7 +800,76 @@ TEST_F(ShaderTest, ComputeMean3D) {
     EXPECT_NEAR(cpuMean, gpuMean, 1e-2);
 }
 
-TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
+TEST_F(ShaderTest, ComputeMultipleImageOperations3D)
+{
+    auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
+    const gpu::Texture inputTexture = wgpuContext.makeTextureFromHostNifti(brainImage);
+    const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
+
+    // Output buffer of compute_mean shader is an intermediate array of floats
+    // that needs to be reduce to a single float
+    const gpu::WorkgroupSize workgroupSize { 8, 8, 4 };
+    const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
+        brainImage.width, brainImage.height, brainImage.depth, workgroupSize
+        );
+    const uint32_t numberOfOperations = 3;
+    const uint32_t intermediateBufferSize = workgroupGrid.totalCount() * numberOfOperations;
+    const gpu::DataBuffer intermediateBuffer = wgpuContext.makeEmptyBuffer(intermediateBufferSize * sizeof(float));
+    const std::string shaderSource = Utils::readFile("shaders/3d/reduction_image_3d.wgsl");
+    const gpu::KernelDescriptor computeMeanDesc {
+        .shader = {
+            .name = "reduction_image_3d",
+            .entryPoint = "main",
+            .filePath = "shaders/3d/reduction_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                {"operations_size", std::to_string(numberOfOperations)},
+                {"operations", "0u, 1u, 2u"}
+            }
+        },
+        .inputTextures = { inputTexture },
+        .outputBuffers = { intermediateBuffer }
+    };
+
+    const gpu::Kernel computeMeanKernel = wgpuContext.makeKernel(computeMeanDesc);
+    wgpuContext.dispatchKernel(computeMeanKernel, workgroupGrid);
+
+    // Perform the reduction on CPU for comparison
+    std::vector<float> intermediateData(intermediateBufferSize);
+    wgpuContext.downloadBuffer(intermediateBuffer, intermediateData.data());
+
+    float gpuSum = 0.0F;
+    float gpuMin = std::numeric_limits<float>::max();
+    float gpuMax = std::numeric_limits<float>::min();
+
+    for(size_t i = 0; i < intermediateBufferSize; i += numberOfOperations) {
+        gpuSum += intermediateData[i];
+        gpuMin = std::min(gpuMin, intermediateData[i + 1]);
+        gpuMax = std::max(gpuMax, intermediateData[i + 2]);
+    }
+
+    double cpuSum = 0.0F;
+    double cpuMin = std::numeric_limits<double>::max();
+    double cpuMax = std::numeric_limits<double>::min();
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const double pixel = static_cast<double>(getPixel3D(x, y, z, brainImage)) / 256.0;
+                cpuSum += pixel;
+                cpuMin = std::min(cpuMin, pixel);
+                cpuMax = std::max(cpuMax, pixel);
+            }
+        }
+    }
+
+    spdlog::info("CPU sum: {}, GPU sum: {}", cpuSum, gpuSum);
+    spdlog::info("CPU mean: {}, GPU mean: {}", cpuSum/numberOfVoxels, gpuSum/numberOfVoxels);
+    EXPECT_NEAR(cpuSum/numberOfVoxels, gpuSum/numberOfVoxels, 1e-3);
+    EXPECT_NEAR(cpuMin, gpuMin, 1e-3);
+    EXPECT_NEAR(cpuMax, gpuMax, 1e-3);
+}
+
+TEST_F(ShaderTest, ComputeTransformedSingleImageOperation3D)
 {
     NiftiTransformParams transformationParameters {
         .alpha = 0.2F, .beta = 0.3F, .gamma = 0.1F,
@@ -826,7 +899,10 @@ TEST_F(ShaderTest, ComputeMeanTransformedImage_3D)
             .entryPoint = "main",
             .filePath = "shaders/3d/reduction_image_transformed_3d.wgsl",
             .workgroupSize = workgroupSize,
-            .placeHolders = { {"operation", "0u"} }
+            .placeHolders = {
+                {"operations_size", "1u"},
+                {"operations", "0u"}
+            }
         },
         .inputBuffers = { transformationParametersBuffer },
         .inputTextures = { inputTexture },

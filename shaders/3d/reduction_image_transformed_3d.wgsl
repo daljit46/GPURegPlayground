@@ -1,21 +1,24 @@
 enable chromium_internal_graphite;
 #include "rigidtransformation.wgsl"
 
-// Computes the mean of a 3D texture transformed by the given parameters.
+// Computes the given operations for a 3D texture.
 // The output needs to be an intermediate array of size >= number of dispatched workgroups.
 // To compute the final mean, another reduction step is required.
 // Workgroup size needs to be a power of 2.
 const workgroupSize = vec3<u32>({{workgroup_size}});
 // 0: sum, 1: min, 2: max
-const operation = {{operation}};
+const operations_size = {{operations_size}};
+const operations = array<u32, {{operations_size}}>({{operations}});
 
 @group(0) @binding(0) var<storage, read> params: TransformationParameters;
 @group(0) @binding(1) var inputTexture: texture_3d<f32>;
 @group(0) @binding(2) var<storage, read_write> outputArray: array<f32>;
 @group(0) @binding(3) var linearSampler: sampler;
 
-var<workgroup> localIntensities : array<f32, workgroupSize.x * workgroupSize.y * workgroupSize.z>;
-
+var<workgroup> localIntensities : array<f32, workgroupSize.x *
+                                             workgroupSize.y *
+                                             workgroupSize.z *
+                                             operations_size>;
 
 fn reductionOperation(a: f32, b: f32, operation: u32) -> f32 {
     switch (operation) {
@@ -49,15 +52,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>,
         intensity = textureSampleLevel(inputTexture, linearSampler, transformed / dim, 0).r;
     }
 
-    localIntensities[index] = intensity;
+    for(var i = 0u; i < operations_size; i += 1) {
+        localIntensities[index * operations_size + i] = intensity;
+    }
     workgroupBarrier();
 
     var offset = workgroupSize.x * workgroupSize.y * workgroupSize.z / 2;
     while (offset > 0) {
         if (index < offset) {
-            let data1 = localIntensities[index];
-            let data2 = localIntensities[index + offset];
-            localIntensities[index] = reductionOperation(data1, data2, operation);
+            for(var i = 0u; i < operations_size; i += 1) {
+                let operation = operations[i];
+                let data1 = localIntensities[index * operations_size + i];
+                let data2 = localIntensities[(index + offset) * operations_size + i];
+                localIntensities[index * operations_size + i] = reductionOperation(data1, data2, operation);
+            }
         }
         offset = offset / 2;
         workgroupBarrier();
@@ -65,6 +73,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>,
 
     if(index == 0) {
         let wgIndex = workgroupId.x + workgroupId.y * numWorkgroups.x + workgroupId.z * numWorkgroups.x * numWorkgroups.y;
-        outputArray[wgIndex] = localIntensities[0];
+        for(var i = 0u; i < operations_size; i += 1) {
+            outputArray[wgIndex * operations_size + i] = localIntensities[i];
+        }
     }
 }
