@@ -1008,6 +1008,22 @@ TEST_F(ShaderTest, Histogram3D)
     std::vector<uint32_t> gpuHistogram(numBins);
     wgpuContext.downloadBuffer(computeHistogramDesc.outputBuffers[0], gpuHistogram.data());
 
+
+    // Compute min max on the CPU for comparison
+    float minPixel = std::numeric_limits<float>::max();
+    float maxPixel = std::numeric_limits<float>::min();
+
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const uint8_t pixel = getPixel3D(x, y, z, brainImage);
+                const float normalizedPixel = static_cast<float>(pixel) / 255.0F;
+                minPixel = std::min(minPixel, normalizedPixel);
+                maxPixel = std::max(maxPixel, normalizedPixel);
+            }
+        }
+    }
+
     std::vector<uint32_t> cpuHistogram(numBins, 0);
     for(size_t z = 0; z < brainImage.depth; z++) {
         for(size_t y = 0; y < brainImage.height; y++) {
@@ -1025,4 +1041,288 @@ TEST_F(ShaderTest, Histogram3D)
         const auto gpuValue = gpuHistogram[i];
         EXPECT_EQ(cpuHistogram[i], gpuHistogram[i]);
     }
+}
+
+
+TEST_F(ShaderTest, JointHistogram3D)
+{
+    const auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
+    const auto inputTexture1 = wgpuContext.makeTextureFromHostNifti(brainImage);
+    // Transform the image
+    NiftiTransformParams transformationParameters {
+        .alpha = 0.2F, .beta = 0.3F, .gamma = 0.1F,
+        .tx = 1.1F, .ty = -10.0F, .tz = -20.0F
+    };
+    const auto transformedImage = transformNifti(brainImage, transformationParameters);
+    const auto inputTexture2 = wgpuContext.makeTextureFromHostNifti(transformedImage);
+    const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
+
+    constexpr uint32_t numBins = 64u;
+    const gpu::WorkgroupSize workgroupSize { 4, 4, 4 };
+    const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
+        brainImage.width, brainImage.height, brainImage.depth, workgroupSize
+    );
+    const size_t minMaxIntermediateBufferSize = Utils::nextMultipleOf(2 * workgroupGrid.totalCount(), 256);
+    const gpu::DataBuffer minMaxIntermediateBuffer1 = wgpuContext.makeEmptyBuffer(minMaxIntermediateBufferSize * sizeof(float));
+    const gpu::DataBuffer minMaxIntermediateBuffer2 = wgpuContext.makeEmptyBuffer(minMaxIntermediateBufferSize * sizeof(float));
+
+    gpu::KernelDescriptor minMaxDesc {
+        .shader = {
+            .name = "minMaxReduction",
+            .entryPoint = "main",
+            .filePath = "shaders/3d/reduction_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                {"operations_size", "2u"},
+                {"operations", "1u, 2u"}
+            }
+        },
+        .inputTextures = { inputTexture1 },
+        .outputBuffers = { minMaxIntermediateBuffer1 }
+    };
+    const gpu::Kernel minMaxKernel1 = wgpuContext.makeKernel(minMaxDesc);
+    minMaxDesc.inputTextures = { inputTexture2 };
+    minMaxDesc.outputBuffers = { minMaxIntermediateBuffer2 };
+    const gpu::Kernel minMaxKernel2 = wgpuContext.makeKernel(minMaxDesc);
+
+    wgpuContext.dispatchKernel(minMaxKernel1, workgroupGrid);
+    wgpuContext.dispatchKernel(minMaxKernel2, workgroupGrid);
+
+    gpu::DataBuffer minMaxBuffer1 = wgpuContext.makeEmptyBuffer(2 * sizeof(float));
+    gpu::DataBuffer minMaxBuffer2 = wgpuContext.makeEmptyBuffer(2 * sizeof(float));
+
+    gpu::ReductionHelper minMaxReductionHelper({
+        .workgroupSize = 256,
+        .groupSize = 2,
+        .data = minMaxIntermediateBuffer1,
+        .result = minMaxBuffer1,
+        .operations = { gpu::ReductionOperation::Min, gpu::ReductionOperation::Max }
+    }, wgpuContext);
+    minMaxReductionHelper.dispatch(wgpuContext);
+    minMaxReductionHelper = gpu::ReductionHelper({
+        .workgroupSize = 256,
+        .groupSize = 2,
+        .data = minMaxIntermediateBuffer2,
+        .result = minMaxBuffer2,
+        .operations = { gpu::ReductionOperation::Min, gpu::ReductionOperation::Max }
+    }, wgpuContext);
+    minMaxReductionHelper.dispatch(wgpuContext);
+
+    const gpu::KernelDescriptor computeJointHistogramDesc {
+        .shader = {
+            .name = "jointHistogram_3d",
+            .entryPoint = "main",
+            .filePath = "shaders/3d/joint_histogram_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = { {"numBins", std::to_string(numBins)} }
+        },
+        .inputBuffers = { minMaxBuffer1, minMaxBuffer2 },
+        .inputTextures = { inputTexture1, inputTexture2 },
+        .outputBuffers = { wgpuContext.makeEmptyBuffer(numBins * numBins * sizeof(uint32_t)) },
+    };
+
+    const gpu::Kernel computeJointHistogramKernel = wgpuContext.makeKernel(computeJointHistogramDesc);
+    wgpuContext.dispatchKernel(computeJointHistogramKernel, workgroupGrid);
+
+    std::vector<uint32_t> gpuJointHistogram(numBins * numBins);
+    wgpuContext.downloadBuffer(computeJointHistogramDesc.outputBuffers[0], gpuJointHistogram.data());
+
+    // Compute min max on the CPU for comparison
+    float minPixel1 = std::numeric_limits<float>::max();
+    float maxPixel1 = std::numeric_limits<float>::min();
+    float minPixel2 = std::numeric_limits<float>::max();
+    float maxPixel2 = std::numeric_limits<float>::min();
+
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const uint8_t pixel1 = getPixel3D(x, y, z, brainImage);
+                const float normalizedPixel1 = static_cast<float>(pixel1) / 255.0F;
+                minPixel1 = std::min(minPixel1, normalizedPixel1);
+                maxPixel1 = std::max(maxPixel1, normalizedPixel1);
+
+                const uint8_t pixel2 = getPixel3D(x, y, z, transformedImage);
+                const float normalizedPixel2 = static_cast<float>(pixel2) / 255.0F;
+                minPixel2 = std::min(minPixel2, normalizedPixel2);
+                maxPixel2 = std::max(maxPixel2, normalizedPixel2);
+            }
+        }
+    }
+
+    std::vector<uint32_t> cpuJointHistogram(numBins * numBins, 0);
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const uint8_t pixel1 = getPixel3D(x, y, z, brainImage);
+                const float normalizedPixel1 = static_cast<float>(pixel1) / 255.0F;
+                const size_t bin1 = std::round((normalizedPixel1 - minPixel1) / (maxPixel1 - minPixel1) * (numBins - 1));
+
+                const uint8_t pixel2 = getPixel3D(x, y, z, transformedImage);
+                const float normalizedPixel2 = static_cast<float>(pixel2) / 255.0F;
+                const size_t bin2 = std::round((normalizedPixel2 - minPixel2) / (maxPixel2 - minPixel2) * (numBins - 1));
+
+                cpuJointHistogram[bin1 * numBins + bin2]++;
+            }
+        }
+    }
+
+    for(size_t i = 0; i < numBins * numBins; i++) {
+        const auto cpuValue = cpuJointHistogram[i];
+        const auto gpuValue = gpuJointHistogram[i];
+        EXPECT_EQ(cpuJointHistogram[i], gpuJointHistogram[i]);
+    }
+
+}
+
+TEST_F(ShaderTest, JointHistogramBSpline3D)
+{
+    const auto brainImage = Utils::loadNiftiFromDisk("data/test_file.nii");
+    const auto inputTexture1 = wgpuContext.makeTextureFromHostNifti(brainImage);
+    // Transform the image
+    NiftiTransformParams transformationParameters {
+        .alpha = 0.2F, .beta = 0.3F, .gamma = 0.1F,
+        .tx = 1.1F, .ty = -10.0F, .tz = -20.0F
+    };
+    const auto transformedImage = transformNifti(brainImage, transformationParameters);
+    const auto inputTexture2 = wgpuContext.makeTextureFromHostNifti(transformedImage);
+    const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
+
+    constexpr uint32_t numBins = 64u;
+    const gpu::WorkgroupSize workgroupSize { 4, 4, 4 };
+    const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
+        brainImage.width, brainImage.height, brainImage.depth, workgroupSize
+        );
+    const size_t minMaxIntermediateBufferSize = Utils::nextMultipleOf(2 * workgroupGrid.totalCount(), 256);
+    const gpu::DataBuffer minMaxIntermediateBuffer1 = wgpuContext.makeEmptyBuffer(minMaxIntermediateBufferSize * sizeof(float));
+    const gpu::DataBuffer minMaxIntermediateBuffer2 = wgpuContext.makeEmptyBuffer(minMaxIntermediateBufferSize * sizeof(float));
+
+    gpu::KernelDescriptor minMaxDesc {
+        .shader = {
+            .name = "minMaxReduction",
+            .entryPoint = "main",
+            .filePath = "shaders/3d/reduction_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                {"operations_size", "2u"},
+                {"operations", "1u, 2u"}
+            }
+        },
+        .inputTextures = { inputTexture1 },
+        .outputBuffers = { minMaxIntermediateBuffer1 }
+    };
+    const gpu::Kernel minMaxKernel1 = wgpuContext.makeKernel(minMaxDesc);
+    minMaxDesc.inputTextures = { inputTexture2 };
+    minMaxDesc.outputBuffers = { minMaxIntermediateBuffer2 };
+    const gpu::Kernel minMaxKernel2 = wgpuContext.makeKernel(minMaxDesc);
+
+    wgpuContext.dispatchKernel(minMaxKernel1, workgroupGrid);
+    wgpuContext.dispatchKernel(minMaxKernel2, workgroupGrid);
+
+    gpu::DataBuffer minMaxBuffer1 = wgpuContext.makeEmptyBuffer(2 * sizeof(float));
+    gpu::DataBuffer minMaxBuffer2 = wgpuContext.makeEmptyBuffer(2 * sizeof(float));
+
+    gpu::ReductionHelper minMaxReductionHelper({
+                                                   .workgroupSize = 256,
+                                                   .groupSize = 2,
+                                                   .data = minMaxIntermediateBuffer1,
+                                                   .result = minMaxBuffer1,
+                                                   .operations = { gpu::ReductionOperation::Min, gpu::ReductionOperation::Max }
+                                               }, wgpuContext);
+    minMaxReductionHelper.dispatch(wgpuContext);
+    minMaxReductionHelper = gpu::ReductionHelper({
+                                                     .workgroupSize = 256,
+                                                     .groupSize = 2,
+                                                     .data = minMaxIntermediateBuffer2,
+                                                     .result = minMaxBuffer2,
+                                                     .operations = { gpu::ReductionOperation::Min, gpu::ReductionOperation::Max }
+                                                 }, wgpuContext);
+    minMaxReductionHelper.dispatch(wgpuContext);
+
+    const gpu::KernelDescriptor computeJointHistogramBsplineDesc {
+        .shader = {
+            .name = "jointHistogramBspline_3d",
+            .entryPoint = "main",
+            .filePath = "shaders/3d/joint_histogram_bspline_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = { {"numBins", std::to_string(numBins)} }
+        },
+        .inputBuffers = { minMaxBuffer1, minMaxBuffer2 },
+        .inputTextures = { inputTexture1, inputTexture2 },
+        .outputBuffers = { wgpuContext.makeEmptyBuffer(numBins * numBins * sizeof(uint32_t)) },
+    };
+
+
+    const gpu::Kernel computeJointHistogramKernel = wgpuContext.makeKernel(computeJointHistogramBsplineDesc);
+    wgpuContext.dispatchKernel(computeJointHistogramKernel, workgroupGrid);
+
+    std::vector<uint32_t> gpuJointHistogram(numBins * numBins);
+    wgpuContext.downloadBuffer(computeJointHistogramBsplineDesc.outputBuffers[0], gpuJointHistogram.data());
+
+    // Compute min max on the CPU for comparison
+    float minPixel1 = std::numeric_limits<float>::max();
+    float maxPixel1 = std::numeric_limits<float>::min();
+    float minPixel2 = std::numeric_limits<float>::max();
+    float maxPixel2 = std::numeric_limits<float>::min();
+
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const uint8_t pixel1 = getPixel3D(x, y, z, brainImage);
+                const float normalizedPixel1 = static_cast<float>(pixel1) / 255.0F;
+                minPixel1 = std::min(minPixel1, normalizedPixel1);
+                maxPixel1 = std::max(maxPixel1, normalizedPixel1);
+
+                const uint8_t pixel2 = getPixel3D(x, y, z, transformedImage);
+                const float normalizedPixel2 = static_cast<float>(pixel2) / 255.0F;
+                minPixel2 = std::min(minPixel2, normalizedPixel2);
+                maxPixel2 = std::max(maxPixel2, normalizedPixel2);
+            }
+        }
+    }
+
+
+    auto bspline = [](float x) -> float {
+        const float ax = std::abs(x);
+        if(ax <= 1.0) {
+            return 2.0/3.0 - ax * ax + 0.5 * ax * ax * ax;
+        }
+        if(ax < 2.0) {
+            return std::pow(2.0 - ax, 3.0) / 6.0;
+        }
+        return 0.0;
+    };
+
+    std::vector<float> cpuJointHistogram(numBins * numBins, 0);
+    for(size_t z = 0; z < brainImage.depth; z++) {
+        for(size_t y = 0; y < brainImage.height; y++) {
+            for(size_t x = 0; x < brainImage.width; x++) {
+                const uint8_t pixel1 = getPixel3D(x, y, z, brainImage);
+                const uint8_t pixel2 = getPixel3D(x, y, z, transformedImage);
+                const float normalizedPixel1 = static_cast<float>(pixel1) / 255.0F;
+                const float normalizedPixel2 = static_cast<float>(pixel2) / 255.0F;
+
+                const float bin1 = (normalizedPixel1 - minPixel1) / (maxPixel1 - minPixel1) * (numBins - 1);
+                const float bin2 = (normalizedPixel2 - minPixel2) / (maxPixel2 - minPixel2) * (numBins - 1);
+
+                const float bin1Floor = std::floor(bin1);
+                const float bin2Floor = std::floor(bin2);
+
+                const size_t i_min = static_cast<size_t>(std::max(bin1Floor - 1, 0.0F));
+                const size_t i_max = static_cast<size_t>(std::min(bin1Floor + 2, static_cast<float>(numBins - 1)));
+                const size_t j_min = static_cast<size_t>(std::max(bin2Floor - 1, 0.0F));
+                const size_t j_max = static_cast<size_t>(std::min(bin2Floor + 2, static_cast<float>(numBins - 1)));
+
+                for(size_t i = i_min; i <= i_max; i++) {
+                    for(size_t j = j_min; j <= j_max; j++) {
+                        const float weight1 = bspline(bin1 - i);
+                        const float weight2 = bspline(bin2 - j);
+                        cpuJointHistogram[i * numBins + j] += weight1 * weight2;
+                    }
+                }
+            }
+        }
+    }
+
+    // TODO: find a way to compare the histograms within a reasonable error margin
+    // Since WebGPU doesn't atomic floats, the results are not exactly the same
 }
