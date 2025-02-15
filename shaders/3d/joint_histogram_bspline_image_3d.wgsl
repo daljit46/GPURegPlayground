@@ -2,9 +2,11 @@
 // as a storage format for the output texture
 enable chromium_internal_graphite;
 
+
 // Number of bins is the same for both images
 const numBins = {{numBins}};
-
+const scalingFactor = {{scalingFactor}};
+const workgroupSize = vec3<u32>({{workgroup_size}});
 
 // Cubic B-spline kernel with compact support = 2
 fn cubicBSpline(x: f32) -> f32 {
@@ -26,43 +28,65 @@ fn cubicBSpline(x: f32) -> f32 {
 // 2D histogram flattened to 1D
 @group(0) @binding(4) var<storage, read_write> histogram: array<atomic<u32>>;
 
+var<workgroup> localHistogram : array<atomic<u32>, numBins * numBins>;
+
 @compute @workgroup_size({{workgroup_size}})
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+fn main(
+@builtin(global_invocation_id) id: vec3<u32>,
+@builtin(local_invocation_id) localId: vec3<u32>,
+) {
     // Assume that the dimensions of the two images are the same
     let dim = vec3<f32>(textureDimensions(inputTexture1, 0));
     let coords : vec3<f32> = vec3<f32>(id.xyz);
     let range1 = minMax1.y - minMax1.x;
     let range2 = minMax2.y - minMax2.x;
+    let localIndex = localId.x + localId.y * workgroupSize.x + localId.z * workgroupSize.x * workgroupSize.y;
+    let totalWorkgroupSize = workgroupSize.x * workgroupSize.y * workgroupSize.z;
+    let binsPerThread = (numBins * numBins + totalWorkgroupSize - 1u) / totalWorkgroupSize;
 
-    if (range1 == 0.0 || range2 == 0.0) {
-        return;
+    // Initialize the local histogram
+    for(var i = 0u; i < binsPerThread; i += 1u) {
+        let bin = localIndex + i * totalWorkgroupSize;
+        if(bin < numBins * numBins) {
+            atomicStore(&localHistogram[bin], 0u);
+        }
     }
 
-    if (coords.x >= dim.x || coords.y >= dim.y || coords.z >= dim.z) {
-        return;
+    workgroupBarrier();
+
+    if(range1 != 0.0 && range2 != 0.0 && coords.x < dim.x && coords.y < dim.y && coords.z < dim.z) {
+        let intensity1 = textureLoad(inputTexture1, id.xyz, 0).r;
+        let intensity2 = textureLoad(inputTexture2, id.xyz, 0).r;
+        // bin = (intensity - min) / range * numBins
+        let bin1 = (intensity1 - minMax1.x) / range1 * f32(numBins - 1);
+        let bin2 = (intensity2 - minMax2.x) / range2 * f32(numBins - 1);
+        let bin1_center = floor(bin1);
+        let bin2_center = floor(bin2);
+
+        // Compute the weights for the four bins
+        let i_min = u32(max(0, bin1_center - 1));
+        let i_max = u32(min(f32(numBins - 1), bin1_center + 2));
+        let j_min = u32(max(0, bin2_center - 1));
+        let j_max = u32(min(f32(numBins - 1), bin2_center + 2));
+
+        for(var i = i_min; i <= i_max; i = i+1u) {
+            let w1 = cubicBSpline(bin1 - f32(i));
+            for(var j = j_min; j <= j_max; j += 1u) {
+                let w2 = cubicBSpline(bin2 - f32(j));
+                let jointWeight = w1 * w2;
+                let bin = i * numBins + j;
+                atomicAdd(&localHistogram[bin], u32(round(jointWeight * scalingFactor)));
+            }
+        }
     }
 
-    let intensity1 = textureLoad(inputTexture1, id.xyz, 0).r;
-    let intensity2 = textureLoad(inputTexture2, id.xyz, 0).r;
-    // bin = (intensity - min) / range * numBins
-    let bin1 = (intensity1 - minMax1.x) / range1 * f32(numBins - 1);
-    let bin2 = (intensity2 - minMax2.x) / range2 * f32(numBins - 1);
-    let bin1_center = floor(bin1);
-    let bin2_center = floor(bin2);
+    workgroupBarrier();
 
-    // Compute the weights for the four bins
-    let i_min = u32(max(0, bin1_center - 1));
-    let i_max = u32(min(f32(numBins - 1), bin1_center + 2));
-    let j_min = u32(max(0, bin2_center - 1));
-    let j_max = u32(min(f32(numBins - 1), bin2_center + 2));
-
-    for(var i = i_min; i <= i_max; i = i+1u) {
-        let w1 = cubicBSpline(bin1 - f32(i));
-        for(var j = j_min; j <= j_max; j += 1u) {
-            let w2 = cubicBSpline(bin2 - f32(j));
-            let jointWeight = w1 * w2;
-            let bin = i * numBins + j;
-            atomicAdd(&histogram[bin], u32(round(jointWeight * 100.0)));
+    // Parallel merge of local histograms
+    for(var i = 0u; i < binsPerThread; i += 1u) {
+        let bin = localIndex + i * totalWorkgroupSize;
+        if(bin < numBins * numBins) {
+            atomicAdd(&histogram[bin], atomicLoad(&localHistogram[bin]));
         }
     }
 }

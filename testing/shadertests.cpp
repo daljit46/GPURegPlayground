@@ -1008,22 +1008,6 @@ TEST_F(ShaderTest, Histogram3D)
     std::vector<uint32_t> gpuHistogram(numBins);
     wgpuContext.downloadBuffer(computeHistogramDesc.outputBuffers[0], gpuHistogram.data());
 
-
-    // Compute min max on the CPU for comparison
-    float minPixel = std::numeric_limits<float>::max();
-    float maxPixel = std::numeric_limits<float>::min();
-
-    for(size_t z = 0; z < brainImage.depth; z++) {
-        for(size_t y = 0; y < brainImage.height; y++) {
-            for(size_t x = 0; x < brainImage.width; x++) {
-                const uint8_t pixel = getPixel3D(x, y, z, brainImage);
-                const float normalizedPixel = static_cast<float>(pixel) / 255.0F;
-                minPixel = std::min(minPixel, normalizedPixel);
-                maxPixel = std::max(maxPixel, normalizedPixel);
-            }
-        }
-    }
-
     std::vector<uint32_t> cpuHistogram(numBins, 0);
     for(size_t z = 0; z < brainImage.depth; z++) {
         for(size_t y = 0; y < brainImage.height; y++) {
@@ -1188,7 +1172,7 @@ TEST_F(ShaderTest, JointHistogramBSpline3D)
     const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
 
     constexpr uint32_t numBins = 64u;
-    const gpu::WorkgroupSize workgroupSize { 4, 4, 4 };
+    const gpu::WorkgroupSize workgroupSize { 8, 8, 4 };
     const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
         brainImage.width, brainImage.height, brainImage.depth, workgroupSize
         );
@@ -1238,13 +1222,18 @@ TEST_F(ShaderTest, JointHistogramBSpline3D)
                                                  }, wgpuContext);
     minMaxReductionHelper.dispatch(wgpuContext);
 
+    const float scalingFactor = 2000.0F;
+
     const gpu::KernelDescriptor computeJointHistogramBsplineDesc {
         .shader = {
             .name = "jointHistogramBspline_3d",
             .entryPoint = "main",
             .filePath = "shaders/3d/joint_histogram_bspline_image_3d.wgsl",
             .workgroupSize = workgroupSize,
-            .placeHolders = { {"numBins", std::to_string(numBins)} }
+            .placeHolders = {
+                {"numBins", std::to_string(numBins)},
+                {"scalingFactor", std::to_string(scalingFactor)}
+            }
         },
         .inputBuffers = { minMaxBuffer1, minMaxBuffer2 },
         .inputTextures = { inputTexture1, inputTexture2 },
@@ -1325,4 +1314,17 @@ TEST_F(ShaderTest, JointHistogramBSpline3D)
 
     // TODO: find a way to compare the histograms within a reasonable error margin
     // Since WebGPU doesn't atomic floats, the results are not exactly the same
+
+    float totalRelativeDiff = 0.0F;
+    for(size_t i = 0; i < numBins * numBins; i++) {
+        const auto cpuValue = cpuJointHistogram[i];
+        const auto gpuValue = gpuJointHistogram[i]/scalingFactor;
+        const auto difference = std::abs(cpuValue - gpuValue);
+        totalRelativeDiff += difference / (cpuValue + 1e-9);
+    }
+
+    totalRelativeDiff /= numBins * numBins;
+
+    EXPECT_LT(totalRelativeDiff, 5e-2);
+
 }
