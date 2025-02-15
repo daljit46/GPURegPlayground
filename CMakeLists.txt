@@ -43,14 +43,15 @@ target_include_directories(nifti
 
 add_subdirectory(testing)
 
+include(FetchDawn)
 
-include(FetchContent)
-FetchContent_Declare(
-  webgpu
-  GIT_REPOSITORY https://github.com/eliemichel/WebGPU-distribution
-  GIT_TAG        dawn
-)
-FetchContent_MakeAvailable(webgpu)
+# include(FetchContent)
+# FetchContent_Declare(
+#   webgpu
+#   GIT_REPOSITORY https://github.com/eliemichel/WebGPU-distribution
+#   GIT_TAG        dawn
+# )
+# FetchContent_MakeAvailable(webgpu)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -80,6 +81,7 @@ target_include_directories(stb-image INTERFACE
 
 
 target_link_libraries(GPURegLib PUBLIC
+    dawncpp_headers
     webgpu_dawn
     stb-image
     spdlog::spdlog

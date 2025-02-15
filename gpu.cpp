@@ -38,11 +38,15 @@ void getAdapterInfo(gpu::Context& context)
     wgpu::AdapterInfo adapterInfo;
     adapter.GetInfo(&adapterInfo);
 
-    spdlog::trace("Adapter vendor: {}", adapterInfo.vendor);
+    const std::string_view vendor = adapterInfo.vendor;
+    const std::string_view architecture = adapterInfo.architecture;
+    const std::string_view description = adapterInfo.description;
+    const std::string_view device = adapterInfo.device;
+    spdlog::trace("Adapter vendor: {}", vendor);
     spdlog::trace("Adapter type: {}", parseAdapterType(adapterInfo.adapterType));
-    spdlog::trace("Adapter architecture: {}", adapterInfo.architecture);
-    spdlog::trace("Adapter description: {}", adapterInfo.description);
-    spdlog::trace("Adapter device: {}", adapterInfo.device);
+    spdlog::trace("Adapter architecture: {}", architecture);
+    spdlog::trace("Adapter description: {}", description);
+    spdlog::trace("Adapter device: {}", device);
 
     wgpu::SupportedLimits supportedLimits {};
     adapter.GetLimits(&supportedLimits);
@@ -210,27 +214,34 @@ Context Context::newContext()
     adapterOptions.powerPreference = wgpu::PowerPreference::HighPerformance;
 
     struct RequestAdapterResult {
-        WGPURequestAdapterStatus status = WGPURequestAdapterStatus_Error;
+        wgpu::RequestAdapterStatus status = wgpu::RequestAdapterStatus::Error;
         wgpu::Adapter adapter = {};
         std::string message;
     };
 
 
-    auto adapterCallback = [](WGPURequestAdapterStatus status,
-                              WGPUAdapter adapter,
-                              const char* message,
-                              void * userdata) {
-        if(status != WGPURequestAdapterStatus_Success) {
-            throw std::runtime_error("Failed to create adapter: "s + message);
+    RequestAdapterResult adapterResult;
+
+    auto adapterCallback = [&](wgpu::RequestAdapterStatus status,
+                              wgpu::Adapter adapter,
+                              wgpu::StringView message) {
+        if(status != wgpu::RequestAdapterStatus::Success) {
+            throw std::runtime_error("Failed to create adapter: "s + message.data);
         }
-        auto* result = static_cast<RequestAdapterResult*>(userdata);
-        result->status = status;
-        result->adapter = wgpu::Adapter::Acquire(adapter);
-        result->message = message != nullptr ? message : "";
+        adapterResult = {
+            .status = status,
+            .adapter = adapter,
+            .message = message.data
+        };
     };
 
-    RequestAdapterResult adapterResult;
-    context.instance.RequestAdapter(&adapterOptions, adapterCallback, &adapterResult);
+    context.instance.RequestAdapter(
+        &adapterOptions,
+        wgpu::CallbackMode::WaitAnyOnly,
+        adapterCallback
+    );
+
+    // context.instance.RequestAdapter(&adapterOptions, adapterCallback, &adapterResult);
     context.adapter = adapterResult.adapter;
     std::vector<wgpu::FeatureName> requiredFeatures = {
         wgpu::FeatureName::R8UnormStorage,
@@ -238,6 +249,7 @@ Context Context::newContext()
     };
     const wgpu::RequiredLimits requiredLimits {
         .limits = wgpu::Limits {
+            .maxComputeWorkgroupStorageSize = 32768,
             .maxComputeInvocationsPerWorkgroup = 512,
         }
     };
@@ -264,20 +276,50 @@ Context Context::newContext()
     deviceDescriptor.requiredFeatureCount = requiredFeatures.size();
     deviceDescriptor.requiredLimits = &requiredLimits;
 
-    const wgpu::DeviceLostCallbackInfo deviceLostCallbackInfo {
-        .nextInChain = nullptr,
-        .callback = onDeviceLost,
-        .userdata = nullptr
-    };
-    const wgpu::UncapturedErrorCallbackInfo uncapturedErrorCallbackInfo {
-        .nextInChain = nullptr,
-        .callback = onDeviceError,
-        .userdata = nullptr
-    };
 
-    deviceDescriptor.deviceLostCallbackInfo = deviceLostCallbackInfo;
-    deviceDescriptor.uncapturedErrorCallbackInfo = uncapturedErrorCallbackInfo;
-
+    deviceDescriptor.SetDeviceLostCallback(
+        wgpu::CallbackMode::AllowSpontaneous,
+        [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
+            const char* reasonName = "";
+            switch (reason) {
+            case wgpu::DeviceLostReason::Unknown:
+                reasonName = "Unknown";
+                break;
+            case wgpu::DeviceLostReason::Destroyed:
+                reasonName = "Destroyed";
+                break;
+            case wgpu::DeviceLostReason::InstanceDropped:
+                reasonName = "InstanceDropped";
+                break;
+            case wgpu::DeviceLostReason::FailedCreation:
+                reasonName = "FailedCreation";
+                break;
+            default:
+                throw std::runtime_error("Unknown device lost reason");
+            }
+            spdlog::error("Device lost because of {} : {}", reasonName, message.data);
+    });
+    deviceDescriptor.SetUncapturedErrorCallback(
+        [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message) {
+            const char* errorTypeName = "";
+            switch (type) {
+            case wgpu::ErrorType::Validation:
+                errorTypeName = "Validation";
+                break;
+            case wgpu::ErrorType::OutOfMemory:
+                errorTypeName = "Out of memory";
+                break;
+            case wgpu::ErrorType::Internal:
+                errorTypeName = "Internal";
+                break;
+            case wgpu::ErrorType::Unknown:
+                errorTypeName = "Unknown";
+                break;
+            default:
+                throw std::runtime_error("Unknown error type");
+            }
+            spdlog::error("Uncaptured error: {} : {}", errorTypeName, message.data);
+    });
     context.device = context.adapter.CreateDevice(&deviceDescriptor);
 
     getAdapterInfo(context);
@@ -362,37 +404,29 @@ void Context::downloadTexture(const Texture &texture, void *data) const
         bool ready = false;
         wgpu::Buffer buffer;
         const uint8_t* data = nullptr; // [stride * buffer.size.height
-    };
+    } mapResult;
+    mapResult.buffer = outputBuffer;
 
-    wgpu::BufferMapCallback onBufferMapped = [](WGPUBufferMapAsyncStatus status, void * userdata) {
-        auto *mapResult = reinterpret_cast<MapResult*>(userdata);
-        mapResult->ready = true;
-        if(status == WGPUBufferMapAsyncStatus_Success) {
-            const auto *const bufferData =  mapResult->buffer.GetConstMappedRange();
+    std::function<void(wgpu::MapAsyncStatus, std::string_view)> onBufferMapped =
+        [&](wgpu::MapAsyncStatus status, std::string_view message) {
+        mapResult.ready = true;
+        if(status == wgpu::MapAsyncStatus::Success) {
+            const auto *const bufferData =  mapResult.buffer.GetConstMappedRange();
             if(bufferData == nullptr) {
                 throw std::runtime_error("Failed to get mapped range of buffer");
             }
-            mapResult->data = reinterpret_cast<const uint8_t*>(bufferData);
+            mapResult.data = reinterpret_cast<const uint8_t*>(bufferData);
         }
         else {
-            throw std::runtime_error("Failed to map buffer to host: " + std::to_string(status));
+            throw std::runtime_error("Failed to map buffer to host: " + std::string(message));
         }
     };
-
-    MapResult mapResult {
-        .buffer = outputBuffer
-    };
-
-    wgpu::BufferMapCallbackInfo mappingInfo {};
-    mappingInfo.mode = wgpu::CallbackMode::WaitAnyOnly;
-    mappingInfo.callback = onBufferMapped;
-    mappingInfo.userdata = reinterpret_cast<void*>(&mapResult);
 
     auto bufferMapped = outputBuffer.MapAsync(wgpu::MapMode::Read,
                                               0,
                                               outputBuffer.GetSize(),
-                                              mappingInfo
-                                              );
+                                              wgpu::CallbackMode::WaitAnyOnly,
+                                              onBufferMapped);
 
     wgpu::FutureWaitInfo waitInfo {bufferMapped};
     auto status = instance.WaitAny(1, &waitInfo, std::numeric_limits<uint64_t>::max());
@@ -413,6 +447,7 @@ void Context::downloadTexture(const Texture &texture, void *data) const
 
 DataBuffer Context::makeEmptyBuffer(size_t size) const
 {
+    // Buffer is guaranteed by WebGPU to be zero-initialised
     const wgpu::BufferDescriptor desc {
         .usage = wgpu::BufferUsage::CopySrc |
                  wgpu::BufferUsage::CopyDst |
@@ -426,10 +461,6 @@ DataBuffer Context::makeEmptyBuffer(size_t size) const
         .usage = ResourceUsage::ReadWrite,
         .size = size
     };
-
-    // Zero out the buffer
-    std::vector<uint8_t> zeroBuffer(size, 0);
-    writeToBuffer(buffer, zeroBuffer.data());
 
     return buffer;
 }
@@ -579,10 +610,10 @@ Kernel Context::makeKernel(const KernelDescriptor &kernelDescriptor) const
     const wgpu::ComputePipelineDescriptor computePipelineDescriptor {
         .label = computePipelineLabel.c_str(),
         .layout = pipelineLayout,
-        .compute = wgpu::ProgrammableStageDescriptor {
+        .compute = wgpu::ComputeState {
             .module = makeShaderModule(kernelDescriptor.shader.name, shaderCode, *this),
-            .entryPoint = kernelDescriptor.shader.entryPoint.c_str()
-        },
+            .entryPoint = kernelDescriptor.shader.entryPoint.c_str(),
+        }
     };
 
     for(const auto& bindGroupLayoutEntry : layoutEntries) {
