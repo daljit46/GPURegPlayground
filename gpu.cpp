@@ -152,7 +152,6 @@ Texture makeTextureFromHostImage(uint32_t width, uint32_t height, uint32_t depth
     };
 
     const wgpu::TextureDataLayout dataLayout {
-        .nextInChain = nullptr,
         .offset = 0,
         .bytesPerRow = width, // one row of pixels is width bytes
         .rowsPerImage = height // one slice of pixels is height rows
@@ -206,7 +205,7 @@ Context Context::newContext()
     // Required for using timed waits in async operations
     // e.g. for using wgpu::Instance::waitAny
     // https://webgpu-native.github.io/webgpu-headers/Asynchronous-Operations.html#Wait-Any
-    instanceDescriptor.features.timedWaitAnyEnable = true;
+    instanceDescriptor.capabilities.timedWaitAnyEnable = true;
 
     context.instance = wgpu::CreateInstance(&instanceDescriptor);
 
@@ -231,15 +230,20 @@ Context Context::newContext()
         adapterResult = {
             .status = status,
             .adapter = adapter,
-            .message = message.data
+            .message = std::string(message)
         };
     };
 
-    context.instance.RequestAdapter(
+    const wgpu::Future instanceRequest = context.instance.RequestAdapter(
         &adapterOptions,
         wgpu::CallbackMode::WaitAnyOnly,
         adapterCallback
     );
+
+    wgpu::WaitStatus waitStatus = context.instance.WaitAny(instanceRequest, -1);
+    if(waitStatus != wgpu::WaitStatus::Success) {
+        throw std::runtime_error("Failed to get adapter: " + adapterResult.message);
+    }
 
     // context.instance.RequestAdapter(&adapterOptions, adapterCallback, &adapterResult);
     context.adapter = adapterResult.adapter;
@@ -252,22 +256,6 @@ Context Context::newContext()
             .maxComputeWorkgroupStorageSize = 32768,
             .maxComputeInvocationsPerWorkgroup = 512,
         }
-    };
-
-    auto onDeviceLost = [](const WGPUDevice * device, WGPUDeviceLostReason reason, char const * message, void * userdata) {
-        std::cout << "Device lost: " << reason << "\n";
-        if(message != nullptr) {
-            std::cout << "Message: " << message << "\n";
-        }
-        std::cout << "\n";
-    };
-
-    auto onDeviceError = [](WGPUErrorType type, const char* message, void*) {
-        std::cout << "Device error: " << type << "\n";
-        if(message != nullptr) {
-            std::cout << "Message: " << message << "\n";
-        }
-        std::cout << "\n";
     };
 
     wgpu::DeviceDescriptor deviceDescriptor {};
