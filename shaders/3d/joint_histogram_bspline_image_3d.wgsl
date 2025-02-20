@@ -2,10 +2,11 @@
 // as a storage format for the output texture
 enable chromium_internal_graphite;
 
+#include "../atomic_utils.wgsl"
 
 // Number of bins is the same for both images
 const numBins = {{numBins}};
-const scalingFactor = {{scalingFactor}};
+const scalingFactor = 100000.0;
 const workgroupSize = vec3<u32>({{workgroup_size}});
 
 // Cubic B-spline kernel with compact support = 2
@@ -75,7 +76,9 @@ fn main(
                 let w2 = cubicBSpline(bin2 - f32(j));
                 let jointWeight = w1 * w2;
                 let bin = i * numBins + j;
-                atomicAdd(&localHistogram[bin], u32(round(jointWeight * scalingFactor)));
+                if(jointWeight > 0.0) {
+                    atomicAdd(&localHistogram[bin], u32(round(jointWeight * scalingFactor)));
+                }
             }
         }
     }
@@ -85,8 +88,9 @@ fn main(
     // Parallel merge of local histograms
     for(var i = 0u; i < binsPerThread; i += 1u) {
         let bin = localIndex + i * totalWorkgroupSize;
-        if(bin < numBins * numBins) {
-            atomicAdd(&histogram[bin], atomicLoad(&localHistogram[bin]));
+        let value = atomicLoad(&localHistogram[bin]);
+        if(bin < numBins * numBins && value > 0) {
+            atomicAddF32InGlobalMemory(&histogram[bin], f32(value) / scalingFactor);
         }
     }
 }

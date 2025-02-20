@@ -1172,11 +1172,11 @@ TEST_F(ShaderTest, JointHistogramBSpline3D)
     const double numberOfVoxels = brainImage.width * brainImage.height * brainImage.depth;
 
     constexpr uint32_t numBins = 64u;
-    const gpu::WorkgroupSize workgroupSize { 8, 8, 4 };
+    const gpu::WorkgroupSize workgroupSize { 8, 4, 4 };
     const auto workgroupGrid = gpu::WorkgroupGrid::ForOneWorkUnitPerThread(
         brainImage.width, brainImage.height, brainImage.depth, workgroupSize
         );
-    const size_t minMaxIntermediateBufferSize = Utils::nextMultipleOf(2 * workgroupGrid.totalCount(), 256);
+    const size_t minMaxIntermediateBufferSize = Utils::nextMultipleOf(2 * workgroupGrid.totalCount(), workgroupSize.totalCount());
     const gpu::DataBuffer minMaxIntermediateBuffer1 = wgpuContext.makeEmptyBuffer(minMaxIntermediateBufferSize * sizeof(float));
     const gpu::DataBuffer minMaxIntermediateBuffer2 = wgpuContext.makeEmptyBuffer(minMaxIntermediateBufferSize * sizeof(float));
 
@@ -1206,7 +1206,7 @@ TEST_F(ShaderTest, JointHistogramBSpline3D)
     gpu::DataBuffer minMaxBuffer2 = wgpuContext.makeEmptyBuffer(2 * sizeof(float));
 
     gpu::ReductionHelper minMaxReductionHelper({
-                                                   .workgroupSize = 256,
+                                                   .workgroupSize = workgroupSize.totalCount(),
                                                    .groupSize = 2,
                                                    .data = minMaxIntermediateBuffer1,
                                                    .result = minMaxBuffer1,
@@ -1214,7 +1214,7 @@ TEST_F(ShaderTest, JointHistogramBSpline3D)
                                                }, wgpuContext);
     minMaxReductionHelper.dispatch(wgpuContext);
     minMaxReductionHelper = gpu::ReductionHelper({
-                                                     .workgroupSize = 256,
+                                                     .workgroupSize = workgroupSize.totalCount(),
                                                      .groupSize = 2,
                                                      .data = minMaxIntermediateBuffer2,
                                                      .result = minMaxBuffer2,
@@ -1318,13 +1318,14 @@ TEST_F(ShaderTest, JointHistogramBSpline3D)
     float totalRelativeDiff = 0.0F;
     for(size_t i = 0; i < numBins * numBins; i++) {
         const auto cpuValue = cpuJointHistogram[i];
-        const auto gpuValue = gpuJointHistogram[i]/scalingFactor;
+        // const auto gpuValue = gpuJointHistogram[i]/scalingFactor;
+        const float gpuValue = reinterpret_cast<float*>(gpuJointHistogram.data())[i];
         const auto difference = std::abs(cpuValue - gpuValue);
         totalRelativeDiff += difference / (cpuValue + 1e-9);
     }
 
     totalRelativeDiff /= numBins * numBins;
 
-    EXPECT_LT(totalRelativeDiff, 5e-2);
+    EXPECT_LT(totalRelativeDiff, 1e-2);
 
 }

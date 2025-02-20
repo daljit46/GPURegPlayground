@@ -17,6 +17,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <future>
 
 
 
@@ -96,6 +97,26 @@ struct NCCPartialSums {
             .dA_dtx    = dA_dtx    + other.dA_dtx,
             .dA_dty    = dA_dty    + other.dA_dty,
             .dA_dtz    = dA_dtz    + other.dA_dtz,
+        };
+    }
+};
+
+struct MIGradients {
+    float grad_alpha = 0;
+    float grad_beta  = 0;
+    float grad_gamma = 0;
+    float grad_tx    = 0;
+    float grad_ty    = 0;
+    float grad_tz    = 0;
+
+    MIGradients operator+(const MIGradients &other) {
+        return {
+            .grad_alpha = grad_alpha + other.grad_alpha,
+            .grad_beta  = grad_beta  + other.grad_beta,
+            .grad_gamma = grad_gamma + other.grad_gamma,
+            .grad_tx    = grad_tx    + other.grad_tx,
+            .grad_ty    = grad_ty    + other.grad_ty,
+            .grad_tz    = grad_tz    + other.grad_tz
         };
     }
 };
@@ -320,20 +341,21 @@ SingleLevelResult registerAtSingleResolution(
     gpu::Context &context,
     const gpu::Texture &sourceTexture,
     const gpu::Texture &targetTexture,
-    TransformationParameters &transformationParams,
+    const TransformationParameters &transformationParams,
     const gpu::WorkgroupSize &workgroupSize,
     float rotationLearningRate,
     float translationLearningRate,
     int maxIterations)
 {
+    TransformationParameters newTransformationParams = transformationParams;
     // Setup Adam with 6 parameters
     std::vector<AdaBeliefOptimiser::Parameter> parameters = {
-        {.value = transformationParams.alpha, .learning_rate = rotationLearningRate },
-        {.value = transformationParams.beta,  .learning_rate = rotationLearningRate },
-        {.value = transformationParams.gamma, .learning_rate = rotationLearningRate },
-        {.value = transformationParams.tx,    .learning_rate = translationLearningRate },
-        {.value = transformationParams.ty,    .learning_rate = translationLearningRate },
-        {.value = transformationParams.tz,    .learning_rate = translationLearningRate }
+        {.value = newTransformationParams.alpha, .learning_rate = rotationLearningRate },
+        {.value = newTransformationParams.beta,  .learning_rate = rotationLearningRate },
+        {.value = newTransformationParams.gamma, .learning_rate = rotationLearningRate },
+        {.value = newTransformationParams.tx,    .learning_rate = translationLearningRate },
+        {.value = newTransformationParams.ty,    .learning_rate = translationLearningRate },
+        {.value = newTransformationParams.tz,    .learning_rate = translationLearningRate }
     };
     AdaBeliefOptimiser optimizer(parameters);
 
@@ -344,7 +366,7 @@ SingleLevelResult registerAtSingleResolution(
     };
 
     auto transformationParamsBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
-    context.writeToBuffer(transformationParamsBuffer, &transformationParams);
+    context.writeToBuffer(transformationParamsBuffer, &newTransformationParams);
 
     SSDGradients ssdGradients;
 
@@ -375,7 +397,7 @@ SingleLevelResult registerAtSingleResolution(
     ssdHistory.reserve(maxIterations);
 
     for (int i = 0; i < maxIterations; ++i) {
-        context.writeToBuffer(transformationParamsBuffer, &transformationParams);
+        context.writeToBuffer(transformationParamsBuffer, &newTransformationParams);
 
         ssdGradients = {};
         context.dispatchKernel(gradientDescentKernel, workgrid);
@@ -405,12 +427,12 @@ SingleLevelResult registerAtSingleResolution(
             dssd_dalpha, dssd_dbeta, dssd_dgamma, dssd_dtx, dssd_dty, dssd_dtz
         });
 
-        transformationParams.alpha = newParams[0].value;
-        transformationParams.beta  = newParams[1].value;
-        transformationParams.gamma = newParams[2].value;
-        transformationParams.tx    = newParams[3].value;
-        transformationParams.ty    = newParams[4].value;
-        transformationParams.tz    = newParams[5].value;
+        newTransformationParams.alpha = newParams[0].value;
+        newTransformationParams.beta  = newParams[1].value;
+        newTransformationParams.gamma = newParams[2].value;
+        newTransformationParams.tx    = newParams[3].value;
+        newTransformationParams.ty    = newParams[4].value;
+        newTransformationParams.tz    = newParams[5].value;
 
         ssdHistory.push_back(ssd);
 
@@ -418,12 +440,12 @@ SingleLevelResult registerAtSingleResolution(
             "Iteration: {} | SSD: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
             i,
             ssd,
-            transformationParams.alpha,
-            transformationParams.beta,
-            transformationParams.gamma,
-            transformationParams.tx,
-            transformationParams.ty,
-            transformationParams.tz
+            newTransformationParams.alpha,
+            newTransformationParams.beta,
+            newTransformationParams.gamma,
+            newTransformationParams.tx,
+            newTransformationParams.ty,
+            newTransformationParams.tz
             );
 
         // if we see no improvement in the last 20 iterations, break
@@ -439,12 +461,12 @@ SingleLevelResult registerAtSingleResolution(
     SingleLevelResult result;
     result.finalSSD = minSSD;
     result.ssdHistory = ssdHistory;
-    result.alpha = transformationParams.alpha;
-    result.beta  = transformationParams.beta;
-    result.gamma = transformationParams.gamma;
-    result.tx    = transformationParams.tx;
-    result.ty    = transformationParams.ty;
-    result.tz    = transformationParams.tz;
+    result.alpha = newTransformationParams.alpha;
+    result.beta  = newTransformationParams.beta;
+    result.gamma = newTransformationParams.gamma;
+    result.tx    = newTransformationParams.tx;
+    result.ty    = newTransformationParams.ty;
+    result.tz    = newTransformationParams.tz;
     return result;
 }
 
@@ -453,7 +475,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
     gpu::Context &context,
     const gpu::Texture &sourceTexture,
     const gpu::Texture &targetTexture,
-    TransformationParameters &transformationParams,
+    const TransformationParameters &transformationParams,
     const gpu::WorkgroupSize &workgroupSize,
     float rotationLearningRate,
     float translationLearningRate,
@@ -470,14 +492,15 @@ SingleLevelResult registerAtSingleResolutionNCC(
     // - Repeat
 
 
+    TransformationParameters newTransformationParams = transformationParams;
     // Setup Adam with 6 parameters
     const std::vector<AdaBeliefOptimiser::Parameter> parameters = {
-        {.value = transformationParams.alpha, .learning_rate = rotationLearningRate },
-        {.value = transformationParams.beta,  .learning_rate = rotationLearningRate },
-        {.value = transformationParams.gamma, .learning_rate = rotationLearningRate },
-        {.value = transformationParams.tx,    .learning_rate = translationLearningRate },
-        {.value = transformationParams.ty,    .learning_rate = translationLearningRate },
-        {.value = transformationParams.tz,    .learning_rate = translationLearningRate }
+        {.value = newTransformationParams.alpha, .learning_rate = rotationLearningRate },
+        {.value = newTransformationParams.beta,  .learning_rate = rotationLearningRate },
+        {.value = newTransformationParams.gamma, .learning_rate = rotationLearningRate },
+        {.value = newTransformationParams.tx,    .learning_rate = translationLearningRate },
+        {.value = newTransformationParams.ty,    .learning_rate = translationLearningRate },
+        {.value = newTransformationParams.tz,    .learning_rate = translationLearningRate }
     };
     AdaBeliefOptimiser optimizer(parameters);
 
@@ -493,7 +516,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
     gpu::DataBuffer targetMeanBuffer = context.makeEmptyBuffer(sizeof(float));
     gpu::DataBuffer movingMeanBuffer = context.makeEmptyBuffer(sizeof(float));
     gpu::DataBuffer transformationParamsBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
-    context.writeToBuffer(transformationParamsBuffer, &transformationParams);
+    context.writeToBuffer(transformationParamsBuffer, &newTransformationParams);
 
     // meanIntermediateBufferSize needs to be a multiple of workgroupSize
     const size_t reductionWorkgroupSize = 256;
@@ -561,7 +584,7 @@ SingleLevelResult registerAtSingleResolutionNCC(
     nccHistory.reserve(maxIterations);
 
     for(int i = 0; i < maxIterations; ++i) {
-        context.writeToBuffer(transformationParamsBuffer, &transformationParams);
+        context.writeToBuffer(transformationParamsBuffer, &newTransformationParams);
 
         nccPartialSums = {};
         context.dispatchKernel(movingMeanKernel, workgrid);
@@ -608,24 +631,24 @@ SingleLevelResult registerAtSingleResolutionNCC(
             "Iteration: {} | NCC: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
             i,
             ncc,
-            transformationParams.alpha,
-            transformationParams.beta,
-            transformationParams.gamma,
-            transformationParams.tx,
-            transformationParams.ty,
-            transformationParams.tz
+            newTransformationParams.alpha,
+            newTransformationParams.beta,
+            newTransformationParams.gamma,
+            newTransformationParams.tx,
+            newTransformationParams.ty,
+            newTransformationParams.tz
             );
 
         auto newParams = optimizer.step({
             -dNCC_dalpha, -dNCC_dbeta, -dNCC_dgamma, -dNCC_dtx, -dNCC_dty, -dNCC_dtz
         });
 
-        transformationParams.alpha = newParams[0].value;
-        transformationParams.beta  = newParams[1].value;
-        transformationParams.gamma = newParams[2].value;
-        transformationParams.tx    = newParams[3].value;
-        transformationParams.ty    = newParams[4].value;
-        transformationParams.tz    = newParams[5].value;
+        newTransformationParams.alpha = newParams[0].value;
+        newTransformationParams.beta  = newParams[1].value;
+        newTransformationParams.gamma = newParams[2].value;
+        newTransformationParams.tx    = newParams[3].value;
+        newTransformationParams.ty    = newParams[4].value;
+        newTransformationParams.tz    = newParams[5].value;
 
         if(i > 10) {
             auto mean = std::accumulate(nccHistory.end()-10, nccHistory.end(), 0.0F) / 10;
@@ -638,19 +661,278 @@ SingleLevelResult registerAtSingleResolutionNCC(
     SingleLevelResult result;
     result.finalSSD = maxNCC;
     result.ssdHistory = nccHistory;
-    result.alpha = transformationParams.alpha;
-    result.beta  = transformationParams.beta;
-    result.gamma = transformationParams.gamma;
-    result.tx    = transformationParams.tx;
-    result.ty    = transformationParams.ty;
-    result.tz    = transformationParams.tz;
+    result.alpha = newTransformationParams.alpha;
+    result.beta  = newTransformationParams.beta;
+    result.gamma = newTransformationParams.gamma;
+    result.tx    = newTransformationParams.tx;
+    result.ty    = newTransformationParams.ty;
+    result.tz    = newTransformationParams.tz;
 
     return result;
 }
 
+
+SingleLevelResult registerAtSingleResolutionMI(
+    gpu::Context &context,
+    const gpu::Texture &sourceTexture,
+    const gpu::Texture &targetTexture,
+    const TransformationParameters &transformationParams,
+    const gpu::WorkgroupSize &workgroupSize,
+    float rotationLearningRate,
+    float translationLearningRate,
+    int maxIterations,
+    int numBins
+    )
+{
+    TransformationParameters newTransformationParams = transformationParams;
+    // Plan for MI:
+    // 1. (Pre‐step) Ensure that the intensity bounds (min/max) for both target and moving images
+    //    are available in buffers (minMaxTarget and minMaxMoving). These are used in the MI shaders.
+    // 2. In each iteration:
+    //    a. Dispatch the MI Joint Histogram kernel (Pass 1) to accumulate a soft joint histogram
+    //       of target intensities and the transformed moving image.
+    //    b. Dispatch the MI Lookup kernel (Pass 2) to normalize the histogram and compute
+    //       the log–ratio lookup table L_ij along with the MI value.
+    //    c. Dispatch the MI Gradient kernel (Pass 3) to compute per–voxel contributions to the
+    //       gradient of MI (i.e. partial sums for each transformation parameter).
+    //    d. Download and reduce the MI partial sums from the GPU.
+    //    e. Update the transformation parameters.
+    //    f. Repeat until convergence or maxIterations.
+
+    const std::vector<AdaBeliefOptimiser::Parameter> parameters = {
+        { .value = newTransformationParams.alpha, .learning_rate = rotationLearningRate },
+        { .value = newTransformationParams.beta,  .learning_rate = rotationLearningRate },
+        { .value = newTransformationParams.gamma, .learning_rate = rotationLearningRate },
+        { .value = newTransformationParams.tx,    .learning_rate = translationLearningRate },
+        { .value = newTransformationParams.ty,    .learning_rate = translationLearningRate },
+        { .value = newTransformationParams.tz,    .learning_rate = translationLearningRate }
+    };
+    AdaBeliefOptimiser optimizer(parameters, 0.9);
+
+    // Determine workgroup grid over the image domain.
+    const gpu::WorkgroupGrid workgrid {
+        .x = (targetTexture.size.width  + workgroupSize.x - 1) / workgroupSize.x,
+        .y = (targetTexture.size.height + workgroupSize.y - 1) / workgroupSize.y,
+        .z = (targetTexture.size.depth  + workgroupSize.z - 1) / workgroupSize.z
+    };
+
+    gpu::DataBuffer transformationParamsBuffer = context.makeEmptyBuffer(sizeof(TransformationParameters));
+    context.writeToBuffer(transformationParamsBuffer, &newTransformationParams);
+
+    gpu::DataBuffer jointHistogramBuffer = context.makeEmptyBuffer(sizeof(uint32_t) * numBins * numBins);
+    gpu::DataBuffer miLookupBuffer       = context.makeEmptyBuffer(sizeof(float) * numBins * numBins);
+    gpu::DataBuffer miResultBuffer       = context.makeEmptyBuffer(sizeof(float)); // holds final MI value
+
+    const size_t miPartialSumsSize = sizeof(MIGradients) * workgrid.totalCount();
+    gpu::DataBuffer miPartialSumsBuffer = context.makeEmptyBuffer(miPartialSumsSize);
+
+
+    // Compute min max values for target and moving images.
+    gpu::DataBuffer minMaxTargetBuffer = context.makeEmptyBuffer(sizeof(float) * 2);
+    gpu::DataBuffer minMaxMovingBuffer = context.makeEmptyBuffer(sizeof(float) * 2);
+    const size_t minMaxIntermediateBufferSize = Utils::nextMultipleOf(workgrid.totalCount(), workgroupSize.totalCount()) * 2;
+    spdlog::info("Workgrid Total Count: {}", workgrid.totalCount());
+    spdlog::info("Min Max Intermediate Buffer Size: {}", minMaxIntermediateBufferSize);
+    spdlog::info("Workgroup Total Count: {}", workgroupSize.totalCount());
+    gpu::DataBuffer minMaxIntermediateSourceBuffer = context.makeEmptyBuffer(sizeof(float) * minMaxIntermediateBufferSize);
+    gpu::DataBuffer minMaxIntermediateTargetBuffer = context.makeEmptyBuffer(sizeof(float) * minMaxIntermediateBufferSize);
+
+    const gpu::KernelDescriptor minMaxTargetKernelDesc {
+        .shader = {
+            .filePath = "shaders/3d/reduction_image_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                { "operations_size" , "2u" },
+                { "operations" , "1u, 2u" } // min, max
+            }
+        },
+        .inputTextures = { targetTexture },
+        .outputBuffers = { minMaxIntermediateTargetBuffer }
+    };
+    const gpu::Kernel minMaxTargetKernel = context.makeKernel(minMaxTargetKernelDesc);
+    context.dispatchKernel(minMaxTargetKernel, workgrid);
+
+
+    const gpu::KernelDescriptor minMaxMovingTargetKernelDesc {
+        .shader = {
+            .name = "Min Max Moving",
+            .filePath = "shaders/3d/reduction_image_transformed_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                { "operations_size" , "2u" },
+                { "operations" , "1u, 2u" } // min, max
+            }
+        },
+        .inputBuffers  = { transformationParamsBuffer },
+        .inputTextures = { sourceTexture },
+        .outputBuffers = { minMaxIntermediateSourceBuffer },
+        .samplers      = { context.makeLinearSampler() }
+    };
+    const gpu::Kernel minMaxMovingKernel = context.makeKernel(minMaxMovingTargetKernelDesc);
+    context.dispatchKernel(minMaxMovingKernel, workgrid);
+
+    gpu::ReductionHelper minMaxMovingReductionHelper(
+        {
+         .workgroupSize = workgroupSize.totalCount(),
+         .groupSize = 2,
+         .data = minMaxIntermediateSourceBuffer,
+         .result = minMaxMovingBuffer,
+         .operations = { gpu::ReductionOperation::Min, gpu::ReductionOperation::Max }
+        },
+        context
+    );
+    gpu::ReductionHelper minMaxTargetReductionHelper(
+        {
+         .workgroupSize = workgroupSize.totalCount(),
+         .groupSize = 2,
+         .data = minMaxIntermediateTargetBuffer,
+         .result = minMaxTargetBuffer,
+         .operations = { gpu::ReductionOperation::Min, gpu::ReductionOperation::Max }
+        },
+        context
+    );
+    minMaxTargetReductionHelper.dispatch(context);
+    minMaxMovingReductionHelper.dispatch(context);
+
+    auto linearSampler = context.makeLinearSampler();
+
+    gpu::KernelDescriptor miJointHistDesc {
+        .shader = {
+            .filePath = "shaders/3d/mi/joint_histogram_3d.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                { "numBins", std::to_string(numBins) }
+            }
+        },
+        .inputBuffers  = { transformationParamsBuffer, minMaxTargetBuffer, minMaxMovingBuffer },
+        .inputTextures = { targetTexture, sourceTexture },
+        .outputBuffers = { jointHistogramBuffer },
+        .samplers      = { linearSampler }
+    };
+    gpu::Kernel miJointHistogramKernel = context.makeKernel(miJointHistDesc);
+
+    const gpu::DataBuffer totalMassBuffer = context.makeEmptyBuffer(sizeof(float));
+    gpu::KernelDescriptor miLookupDesc {
+        .shader = {
+            .filePath = "shaders/3d/mi/compute_probabilities_lookup.wgsl",
+            .workgroupSize = {1,1,1},
+            .placeHolders = {
+                { "numBins", std::to_string(numBins) }
+            }
+        },
+        .inputBuffers  = { jointHistogramBuffer },
+        .outputBuffers = { miLookupBuffer, miResultBuffer, totalMassBuffer },
+    };
+    gpu::Kernel miLookupKernel = context.makeKernel(miLookupDesc);
+
+    gpu::KernelDescriptor miGradientDesc {
+        .shader = {
+            .filePath = "shaders/3d/mi/update_gradients_mi.wgsl",
+            .workgroupSize = workgroupSize,
+            .placeHolders = {
+                { "numBins", std::to_string(numBins) }
+            }
+        },
+        .inputBuffers  = { transformationParamsBuffer, minMaxTargetBuffer,
+                           minMaxMovingBuffer, miLookupBuffer, totalMassBuffer
+                         },
+        .inputTextures = { targetTexture, sourceTexture },
+        .outputBuffers = { miPartialSumsBuffer },
+        .samplers      = { linearSampler }
+    };
+
+    gpu::Kernel miGradientKernel = context.makeKernel(miGradientDesc);
+
+    std::vector<float> miHistory;
+    miHistory.reserve(maxIterations);
+    float maxMI = -std::numeric_limits<float>::infinity();
+
+    std::vector<float> zeros(numBins * numBins, 0.0f);
+
+    for (int i = 0; i < maxIterations; ++i) {
+        context.writeToBuffer(transformationParamsBuffer, &newTransformationParams);
+        context.dispatchKernel(minMaxMovingKernel, workgrid);
+
+        minMaxMovingReductionHelper.dispatch(context);
+
+        context.writeToBuffer(jointHistogramBuffer, zeros.data());
+        context.dispatchKernel(miJointHistogramKernel, workgrid);
+
+        context.dispatchKernel(miLookupKernel, {1, 1, 1});
+        float miValue;
+        context.downloadBuffer(miResultBuffer, &miValue);
+
+        context.dispatchKernel(miGradientKernel, workgrid);
+
+        std::vector<MIGradients> miGradientsList(workgrid.totalCount());
+        context.downloadBuffer(miPartialSumsBuffer, miGradientsList.data());
+        MIGradients miGradients = std::reduce(
+            miGradientsList.begin(), miGradientsList.end(), MIGradients{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+
+        miHistory.push_back(miValue);
+        if (miValue > maxMI)
+            maxMI = miValue;
+
+        spdlog::info(
+            "Iteration: {} | MI: {} | Alpha: {} Beta: {} Gamma: {} Tx: {} Ty: {} Tz: {}",
+            i,
+            miValue,
+            newTransformationParams.alpha,
+            newTransformationParams.beta,
+            newTransformationParams.gamma,
+            newTransformationParams.tx,
+            newTransformationParams.ty,
+            newTransformationParams.tz
+            );
+
+        const float dMI_dalpha = miGradients.grad_alpha;
+        const float dMI_dbeta  = miGradients.grad_beta;
+        const float dMI_dgamma = miGradients.grad_gamma;
+        const float dMI_dtx    = miGradients.grad_tx;
+        const float dMI_dty    = miGradients.grad_ty;
+        const float dMI_dtz    = miGradients.grad_tz;
+
+        // spdlog::info(
+        //     "dMI_dalpha: {} dMI_dbeta: {} dMI_dgamma: {} dMI_dtx: {} dMI_dty: {} dMI_dtz: {}",
+        //     dMI_dalpha, dMI_dbeta, dMI_dgamma, dMI_dtx, dMI_dty, dMI_dtz
+        // );
+
+        // Since MI is maximized during registration, we use the negative gradient
+        auto newParams = optimizer.step({
+            -dMI_dalpha, -dMI_dbeta, -dMI_dgamma, -dMI_dtx, -dMI_dty, -dMI_dtz
+        });
+
+        newTransformationParams.alpha = newParams[0].value;
+        newTransformationParams.beta  = newParams[1].value;
+        newTransformationParams.gamma = newParams[2].value;
+        newTransformationParams.tx    = newParams[3].value;
+        newTransformationParams.ty    = newParams[4].value;
+        newTransformationParams.tz    = newParams[5].value;
+
+        if (i > 10) {
+            float recentMean = std::accumulate(miHistory.end()-10, miHistory.end(), 0.0F) / 10;
+            if (std::abs(miValue - recentMean) < 1e-5)
+                break;
+        }
+    }
+
+    SingleLevelResult result;
+    result.finalSSD = maxMI;  // Here, MI is maximized.
+    result.ssdHistory = miHistory;
+    result.alpha = newTransformationParams.alpha;
+    result.beta  = newTransformationParams.beta;
+    result.gamma = newTransformationParams.gamma;
+    result.tx    = newTransformationParams.tx;
+    result.ty    = newTransformationParams.ty;
+    result.tz    = newTransformationParams.tz;
+
+    return result;
+}
+
+
 int main(int argc, char **argv)
 {
-    enum class Metric { SSD, NCC };
+    enum class Metric { SSD, NCC, MI };
 
     std::vector<std::string> appArgs(argv, argv + argc);
     bool gpuOnlyVersion = std::find(appArgs.begin(), appArgs.end(), "--gpuonly") != appArgs.end();
@@ -665,7 +947,12 @@ int main(int argc, char **argv)
     if(std::find(appArgs.begin(), appArgs.end(), "--ncc") != appArgs.end()) {
         spdlog::info("Using NCC as the metric");
         metric = Metric::NCC;
-    } else {
+    }
+    else if(std::find(appArgs.begin(), appArgs.end(), "--mi") != appArgs.end()) {
+        spdlog::info("Using MI as the metric");
+        metric = Metric::MI;
+    }
+    else {
         spdlog::info("Using SSD as the metric");
     }
 
@@ -718,8 +1005,8 @@ int main(int argc, char **argv)
     auto targetTextureEighth = downsample3DTexture(context, targetTextureQuarter, downsampleWG);
 
 
-    std::vector<gpu::Texture> sourcePyramid { sourceTextureEighth, sourceTextureQuarter, sourceTextureHalf, sourceTextureFull };
-    std::vector<gpu::Texture> targetPyramid { targetTextureEighth, targetTextureQuarter, targetTextureHalf, targetTextureFull };
+    const std::vector<gpu::Texture> sourcePyramid { sourceTextureEighth, sourceTextureQuarter, sourceTextureHalf, sourceTextureFull };
+    const std::vector<gpu::Texture> targetPyramid { targetTextureEighth, targetTextureQuarter, targetTextureHalf, targetTextureFull };
 
     TransformationParameters transformationParams; // all zero by default
 
@@ -740,46 +1027,128 @@ int main(int argc, char **argv)
 
     for (int level = 0; level < 4; ++level)
     {
-        spdlog::info("\n\n=== Registering at pyramid level {} (0=coarse, 3=full) ===", level);
-        auto result = [&]() {
-            if(metric == Metric::SSD) {
-                return gpuOnlyVersion ?
-                    registerAtSingleResolutionGPUOnly(
-                        context,
-                        sourcePyramid[level],
-                        targetPyramid[level],
-                        transformationParams, // updated in place
-                        workgroupSize,
-                        angleLearningRate / std::pow(2, level + 1),
-                        translationLearningRate / std::pow(2, level + 1),
-                        maxIterations
-                    ) :
-                    registerAtSingleResolution(
-                        context,
-                        sourcePyramid[level],
-                        targetPyramid[level],
-                        transformationParams, // updated in place
-                        workgroupSize,
-                        angleLearningRate / std::pow(2, level + 1),
-                        translationLearningRate / std::pow(2, level + 1),
-                        maxIterations
+        SingleLevelResult result;
+
+        constexpr int numBinsMI = 32;
+        // For the lowest level (level 0) and MI metric, try 5 random initializations.
+        if(level == 0 && metric == Metric::MI)
+        {
+            spdlog::info("Performing 5 random initializations at the lowest pyramid level (MI).");
+            float bestMI = -std::numeric_limits<float>::infinity();
+            SingleLevelResult bestResult;
+            constexpr int restartCount = 5;
+            for (int trial = 0; trial < restartCount; ++trial)
+            {
+                // Since at level 0, the image is 1/8th the size of the full resolution,
+                // we scale the expected translation by 8.
+                const auto translationScalingFactor = 8.0;
+                TransformationParameters trialParams;
+                // For the first trial, use the initial parameters.
+                if(trial > 0) {
+                    trialParams.alpha = angleDist(gen);
+                    trialParams.beta  = angleDist(gen);
+                    trialParams.gamma = angleDist(gen);
+                    trialParams.tx    = translationDist(gen) / translationScalingFactor;
+                    trialParams.ty    = translationDist(gen) / translationScalingFactor;
+                    trialParams.tz    = translationDist(gen) / translationScalingFactor;
+                }
+                spdlog::info("Level 0, Trial {}: Initial parameters: Alpha: {}, Beta: {}, Gamma: {}, Tx: {}, Ty: {}, Tz: {}",
+                             trial, trialParams.alpha, trialParams.beta, trialParams.gamma,
+                             trialParams.tx, trialParams.ty, trialParams.tz);
+
+                SingleLevelResult trialResult = registerAtSingleResolutionMI(
+                    context,
+                    sourcePyramid[level],
+                    targetPyramid[level],
+                    trialParams,
+                    workgroupSize,
+                    angleLearningRate / std::pow(2, level + 1),
+                    translationLearningRate / std::pow(2, level + 1),
+                    maxIterations,
+                    numBinsMI >> (4 - level)
                     );
+                spdlog::info("Level 0, Trial {}: Final MI = {}", trial, trialResult.finalSSD);
+
+                // Keep the trial with the highest MI.
+                if(trialResult.finalSSD > bestMI)
+                {
+                    bestMI = trialResult.finalSSD;
+                    bestResult = trialResult;
+                }
             }
-            return registerAtSingleResolutionNCC(
-                context,
-                sourcePyramid[level],
-                targetPyramid[level],
-                transformationParams, // updated in place
-                workgroupSize,
-                angleLearningRate / std::pow(2, level + 1),
-                translationLearningRate / std::pow(2, level + 1),
-                maxIterations
-            );
-        }();
-        globalSSDHistory.insert( globalSSDHistory.end(),
-            result.ssdHistory.begin(),
-            result.ssdHistory.end()
-        );
+            result = bestResult;
+            // Use the best trial's parameters as the starting point for the next levels.
+            transformationParams.alpha = result.alpha;
+            transformationParams.beta  = result.beta;
+            transformationParams.gamma = result.gamma;
+            transformationParams.tx    = result.tx;
+            transformationParams.ty    = result.ty;
+            transformationParams.tz    = result.tz;
+            globalSSDHistory.insert(globalSSDHistory.end(), result.ssdHistory.begin(), result.ssdHistory.end());
+        }
+        else {
+            // For all other levels (or metrics), perform registration as before.
+            result = [&]() {
+                if(metric == Metric::SSD) {
+                    return gpuOnlyVersion ?
+                               registerAtSingleResolutionGPUOnly(
+                                   context,
+                                   sourcePyramid[level],
+                                   targetPyramid[level],
+                                   transformationParams, // updated in place
+                                   workgroupSize,
+                                   angleLearningRate / std::pow(2, level + 1),
+                                   translationLearningRate / std::pow(2, level + 1),
+                                   maxIterations
+                                   ) :
+                               registerAtSingleResolution(
+                                   context,
+                                   sourcePyramid[level],
+                                   targetPyramid[level],
+                                   transformationParams, // updated in place
+                                   workgroupSize,
+                                   angleLearningRate / std::pow(2, level + 1),
+                                   translationLearningRate / std::pow(2, level + 1),
+                                   maxIterations
+                                   );
+                }
+                else if(metric == Metric::NCC) {
+                    return registerAtSingleResolutionNCC(
+                        context,
+                        sourcePyramid[level],
+                        targetPyramid[level],
+                        transformationParams,
+                        workgroupSize,
+                        angleLearningRate / std::pow(2, level + 1),
+                        translationLearningRate / std::pow(2, level + 1),
+                        maxIterations
+                        );
+                }
+                else { // MI
+                    return registerAtSingleResolutionMI(
+                        context,
+                        sourcePyramid[level],
+                        targetPyramid[level],
+                        transformationParams,
+                        workgroupSize,
+                        angleLearningRate / std::pow(2, level + 1),
+                        translationLearningRate / std::pow(2, level + 1),
+                        maxIterations,
+                        numBinsMI >> (4 - level)
+                        );
+                }
+            }();
+
+            // Update transformation parameters from this level's registration.
+            transformationParams.alpha = result.alpha;
+            transformationParams.beta  = result.beta;
+            transformationParams.gamma = result.gamma;
+            transformationParams.tx    = result.tx;
+            transformationParams.ty    = result.ty;
+            transformationParams.tz    = result.tz;
+            globalSSDHistory.insert(globalSSDHistory.end(), result.ssdHistory.begin(), result.ssdHistory.end());
+
+        }
 
         // If not yet at the finest level, rescale translation parameters
         // to the next finer resolution. Rotations remain the same.
@@ -797,6 +1166,14 @@ int main(int argc, char **argv)
     }
 
     spdlog::info("Multi-resolution registration done.");
+    spdlog::info("Initial parameters:");
+    spdlog::info("  Alpha: {}", targetAlpha);
+    spdlog::info("  Beta:  {}", targetBeta);
+    spdlog::info("  Gamma: {}", targetGamma);
+    spdlog::info("  Tx:    {}", targetTx);
+    spdlog::info("  Ty:    {}", targetTy);
+    spdlog::info("  Tz:    {}", targetTz);
+
     spdlog::info("Final parameters:");
     spdlog::info("  Alpha: {}", transformationParams.alpha);
     spdlog::info("  Beta:  {}", transformationParams.beta);
